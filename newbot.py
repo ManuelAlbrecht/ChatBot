@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify
 import os
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -12,10 +12,6 @@ client = OpenAI(api_key=key)
 app = Flask(__name__)
 
 thread = client.beta.threads.create()
-
-@app.route("/")
-def index():
-    return render_template("index1.html")
 
 @app.route("/ask", methods=["POST"])
 def ask():
