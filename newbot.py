@@ -12,6 +12,7 @@ assistant_id_bundesbodenschutzverordnung = os.getenv("ASSISTANT_ID_bundesbodensc
 assistant_id_laga_pn_98 = os.getenv("ASSISTANT_ID_laga_pn_98")
 assistant_id_Ersatzbaustoffverordnung = os.getenv("ASSISTANT_ID_Ersatzbaustoffverordnung")
 assistant_id_Deponieverordnung = os.getenv("ASSISTANT_ID_Deponieverordnung")
+assistant_id_Probenahmeprotokoll = os.getenv("ASSISTANT_ID_Probenahmeprotokoll")
 
 client = OpenAI(api_key=key)
 app = Flask(__name__)
@@ -146,6 +147,28 @@ def ask6():
     # Generate a response
     run = client.beta.threads.runs.create_and_poll(
         thread_id=thread.id, assistant_id=assistant_id_Deponieverordnung
+    )
+
+    messages = list(client.beta.threads.messages.list(thread_id=thread.id, run_id=run.id))
+    message_content = messages[0].content[0].text
+
+    return jsonify({"response": message_content.value})
+    
+
+@app.route("/askProbenahmeprotokoll", methods=["POST"])
+def ask7():
+    user_message = request.json.get("message")
+
+    # Create a message
+    client.beta.threads.messages.create(
+        thread_id=thread.id,
+        role="user",
+        content=user_message,
+    )
+
+    # Generate a response
+    run = client.beta.threads.runs.create_and_poll(
+        thread_id=thread.id, assistant_id=assistant_id_Probenahmeprotokoll
     )
 
     messages = list(client.beta.threads.messages.list(thread_id=thread.id, run_id=run.id))
