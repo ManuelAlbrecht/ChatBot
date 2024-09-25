@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify, render_template
+from flask_cors import CORS
 import os
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -16,6 +17,7 @@ assistant_id_Probenahmeprotokoll = os.getenv("ASSISTANT_ID_Probenahmeprotokoll")
 
 client = OpenAI(api_key=key)
 app = Flask(__name__)
+CORS(app)
 
 thread = client.beta.threads.create()
 
