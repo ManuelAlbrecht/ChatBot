@@ -26,27 +26,23 @@ thread = client.beta.threads.create()
 # Dictionary to store session data (e.g., thread IDs)
 session_data = {}
 
-@app.route("/")
-def index():
-    return render_template("index1.html")
+# Serve index1.html when a GET request is made to /askberater
+@app.route("/askberater", methods=["GET"])
+def serve_frontend():
+    return send_from_directory(".", "index1.html")  # Serve index1.html from the root directory
 
-# Helper function to get or create session ID
-def get_or_create_session_id():
-    session_id = request.cookies.get('session_id')
-    
-    if not session_id:  # If no session ID found, create one
-        session_id = str(uuid.uuid4())  # Generate a new session ID
-        session_data[session_id] = client.beta.threads.create()  # Create a new thread for the session
-    return session_id
-
+# Handle the chat functionality for POST requests
 @app.route("/askberater", methods=["POST"])
-def ask1():
+def ask_berater():
     user_message = request.json.get("message")
     
     # Get or create the session ID and associate it with a thread
-    session_id = get_or_create_session_id()
+    session_id = request.cookies.get('session_id')
     
-    # If there's no thread associated with this session, create a new one
+    if not session_id:  # If no session ID found, create one
+        session_id = str(uuid.uuid4())
+        session_data[session_id] = client.beta.threads.create()
+
     if session_id not in session_data:
         session_data[session_id] = client.beta.threads.create()
     
@@ -73,7 +69,6 @@ def ask1():
     response.set_cookie('session_id', session_id)  # Store session ID in a cookie
     
     return response
-
 
 @app.route("/askkreislaufwirtschaftsgesetz", methods=["POST"])
 def ask2():
