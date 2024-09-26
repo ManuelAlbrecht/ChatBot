@@ -1,1 +1,124 @@
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chatbot Interface</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            padding: 20px;
+        }
+
+        .chatbox {
+            width: 80%;
+            max-width: 800px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 20px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .messages {
+            height: 300px;
+            overflow-y: scroll;
+            margin-bottom: 20px;
+            border: 1px solid #ddd;
+            padding: 10px;
+            background: #fafafa;
+        }
+
+        .message {
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+        }
+
+        .user-message {
+            background-color: #cce5ff;
+            text-align: right;
+        }
+
+        .bot-message {
+            background-color: #d4edda;
+            text-align: left;
+        }
+
+        .input-area {
+            display: flex;
+        }
+
+        .input-area input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            margin-right: 10px;
+        }
+
+        .input-area button {
+            padding: 10px 20px;
+            border: none;
+            background-color: #007bff;
+            color: white;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        .input-area button:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <div class="chatbox">
+        <div class="messages" id="messages"></div>
+        <div class="input-area">
+            <input type="text" id="user-input" placeholder="Type your message here..." />
+            <button onclick="sendMessage()">Send</button>
+        </div>
+    </div>
+
+    <script>
+        const baseUrl = 'https://chatbot-1u2f.onrender.com'; // Use your backend URL here
+        const apiRoute = '/askberater';
+
+        function appendMessage(content, className) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${className}`;
+            messageDiv.innerText = content;
+            document.getElementById('messages').appendChild(messageDiv);
+            document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
+        }
+
+        function sendMessage() {
+            const userMessage = document.getElementById('user-input').value;
+            if (!userMessage) return;
+
+            appendMessage(userMessage, 'user-message');
+            document.getElementById('user-input').value = '';
+
+            // Change the route to any API endpoint you want to test
+            const apiRoute = '/askberater'; // Change this depending on the assistant route
+
+            fetch(baseUrl + apiRoute, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ message: userMessage })
+            })
+            .then(response => response.json())
+            .then(data => {
+                appendMessage(data.response, 'bot-message');
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                appendMessage('Something went wrong. Please try again.', 'bot-message');
+            });
+        }
+    </script>
+</body>
+</html>
