@@ -1,8 +1,9 @@
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, make_response
 from flask_cors import CORS
 import os
 from openai import OpenAI
 from dotenv import load_dotenv
+import uuid
 
 load_dotenv()
 
@@ -21,30 +22,57 @@ CORS(app)
 
 thread = client.beta.threads.create()
 
+
+# Dictionary to store session data (e.g., thread IDs)
+session_data = {}
+
 @app.route("/")
 def index():
     return render_template("index1.html")
 
+# Helper function to get or create session ID
+def get_or_create_session_id():
+    session_id = request.cookies.get('session_id')
+    
+    if not session_id:  # If no session ID found, create one
+        session_id = str(uuid.uuid4())  # Generate a new session ID
+        session_data[session_id] = client.beta.threads.create()  # Create a new thread for the session
+    return session_id
+
 @app.route("/askberater", methods=["POST"])
 def ask1():
     user_message = request.json.get("message")
+    
+    # Get or create the session ID and associate it with a thread
+    session_id = get_or_create_session_id()
+    
+    # If there's no thread associated with this session, create a new one
+    if session_id not in session_data:
+        session_data[session_id] = client.beta.threads.create()
+    
+    # Use the thread ID associated with this session
+    thread_id = session_data[session_id].id
 
-    # Create a message
+    # Create a message in the session's thread
     client.beta.threads.messages.create(
-        thread_id=thread.id,
+        thread_id=thread_id,
         role="user",
         content=user_message,
     )
 
     # Generate a response
     run = client.beta.threads.runs.create_and_poll(
-        thread_id=thread.id, assistant_id=assistant_id_berater
+        thread_id=thread_id, assistant_id=assistant_id_berater
     )
 
-    messages = list(client.beta.threads.messages.list(thread_id=thread.id, run_id=run.id))
+    messages = list(client.beta.threads.messages.list(thread_id=thread_id, run_id=run.id))
     message_content = messages[0].content[0].text
 
-    return jsonify({"response": message_content.value})
+    # Prepare response with the session ID stored in a cookie
+    response = make_response(jsonify({"response": message_content.value}))
+    response.set_cookie('session_id', session_id)  # Store session ID in a cookie
+    
+    return response
 
 
 @app.route("/askkreislaufwirtschaftsgesetz", methods=["POST"])
