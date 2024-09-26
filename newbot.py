@@ -9,27 +9,18 @@ load_dotenv()
 
 key = os.getenv("OPENAI_API_KEY")
 assistant_id_berater = os.getenv("ASSISTANT_ID_berater")
-assistant_id_kreislaufwirtschaftsgesetz = os.getenv("ASSISTANT_ID_kreislaufwirtschaftsgesetz")
-assistant_id_bundesbodenschutzverordnung = os.getenv("ASSISTANT_ID_bundesbodenschutzverordnung")
-assistant_id_laga_pn_98 = os.getenv("ASSISTANT_ID_laga_pn_98")
-assistant_id_Ersatzbaustoffverordnung = os.getenv("ASSISTANT_ID_Ersatzbaustoffverordnung")
-assistant_id_Deponieverordnung = os.getenv("ASSISTANT_ID_Deponieverordnung")
-assistant_id_Probenahmeprotokoll = os.getenv("ASSISTANT_ID_Probenahmeprotokoll")
 
 client = OpenAI(api_key=key)
 app = Flask(__name__)
 CORS(app)
 
-thread = client.beta.threads.create()
-
-
 # Dictionary to store session data (e.g., thread IDs)
 session_data = {}
 
-# Serve index1.html when a GET request is made to /askberater
+# Serve the index1.html from templates folder for the /askberater route
 @app.route("/askberater", methods=["GET"])
 def serve_frontend():
-    return send_from_directory(".", "index1.html")  # Serve index1.html from the root directory
+    return render_template("index1.html")  # Flask will look for this in the 'templates' folder
 
 # Handle the chat functionality for POST requests
 @app.route("/askberater", methods=["POST"])
