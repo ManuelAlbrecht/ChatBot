@@ -3,6 +3,7 @@ from flask_cors import CORS
 import os
 from openai import OpenAI
 from dotenv import load_dotenv
+import pymysql
 import uuid
 
 load_dotenv()
@@ -16,6 +17,30 @@ CORS(app)
 
 # Dictionary to store session data (e.g., thread IDs)
 session_data = {}
+
+# Function to connect to the MySQL database
+def get_db_connection():
+    return pymysql.connect(
+        host=os.getenv('DB_HOST'),
+        user=os.getenv('DB_USER'),
+        password=os.getenv('DB_PASS'),
+        database=os.getenv('DB_NAME'),
+        charset='utf8mb4',
+        cursorclass=pymysql.cursors.DictCursor
+    )
+
+# Function to log chat data into the database
+def log_chat(thread_id, user_message, assistant_response):
+    connection = get_db_connection()
+    try:
+        with connection.cursor() as cursor:
+            sql = "INSERT INTO chatlog (thread_id, user_message, assistant_response) VALUES (%s, %s, %s)"
+            cursor.execute(sql, (thread_id, user_message, assistant_response))
+            connection.commit()
+    except Exception as e:
+        print(f"Error inserting into the database: {e}")
+    finally:
+        connection.close()
 
 # Serve the index1.html from templates folder for the /askberater route
 @app.route("/askberater", methods=["GET"])
@@ -54,6 +79,9 @@ def ask_berater():
 
     messages = list(client.beta.threads.messages.list(thread_id=thread_id, run_id=run.id))
     message_content = messages[0].content[0].text
+
+    # Log the chat (thread_id, user message, assistant response)
+    log_chat(thread_id, user_message, message_content)
 
     # Prepare response with the session ID stored in a cookie
     response = make_response(jsonify({"response": message_content.value}))
