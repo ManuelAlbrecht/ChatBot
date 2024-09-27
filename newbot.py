@@ -48,6 +48,7 @@ def serve_frontend():
     return render_template("index1.html")  # Flask will look for this in the 'templates' folder
 
 # Handle the chat functionality for POST requests
+# Handle the chat functionality for POST requests
 @app.route("/askberater", methods=["POST"])
 def ask_berater():
     user_message = request.json.get("message")
@@ -78,13 +79,13 @@ def ask_berater():
     )
 
     messages = list(client.beta.threads.messages.list(thread_id=thread_id, run_id=run.id))
-    message_content = messages[0].content[0].text
+    message_content = messages[0].content[0].text.value  # Extract the plain text value
 
     # Log the chat (thread_id, user message, assistant response)
     log_chat(thread_id, user_message, message_content)
 
     # Prepare response with the session ID stored in a cookie
-    response = make_response(jsonify({"response": message_content.value}))
+    response = make_response(jsonify({"response": message_content}))
     response.set_cookie('session_id', session_id)  # Store session ID in a cookie
     
     return response
