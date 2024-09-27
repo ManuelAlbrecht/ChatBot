@@ -23,10 +23,14 @@ def get_db_connection():
     connection = mysql.connector.connect(
         host=os.getenv('DB_HOST'),  # e.g., 'w01f37e0.kasserver.com'
         user=os.getenv('DB_USER'),  # e.g., 'd04137c5'
-        password=os.getenv('DB_PASS'),  # e.g., 'Nylaav7044*'
-        database=os.getenv('DB_NAME'),  # e.g., 'd04137c5'
+        password=os.getenv('DB_PASS'),  # e.g., 'YourNewPassword'
+        database=os.getenv('DB_NAME'),  # e.g., 'd04137c5',
         charset='utf8mb4'
     )
+    
+    # Set collation to utf8mb4_general_ci to avoid unsupported collation issues
+    cursor = connection.cursor()
+    cursor.execute("SET NAMES 'utf8mb4' COLLATE 'utf8mb4_general_ci'")
     return connection
 
 # Function to log the chat into the database
