@@ -1,7 +1,6 @@
-import os
-import mysql.connector
 from flask import Flask, request, jsonify, render_template, make_response
 from flask_cors import CORS
+import os
 from openai import OpenAI
 from dotenv import load_dotenv
 import uuid
@@ -17,36 +16,6 @@ CORS(app)
 
 # Dictionary to store session data (e.g., thread IDs)
 session_data = {}
-
-# Database connection function
-def get_db_connection():
-    connection = mysql.connector.connect(
-        host=os.getenv('DB_HOST'),  # e.g., 'w01f37e0.kasserver.com'
-        user=os.getenv('DB_USER'),  # e.g., 'd04137c5'
-        password=os.getenv('DB_PASS'),  # e.g., 'YourNewPassword'
-        database=os.getenv('DB_NAME'),  # e.g., 'd04137c5',
-        charset='utf8mb4'
-    )
-    
-    # Set collation to utf8mb4_general_ci to avoid unsupported collation issues
-    cursor = connection.cursor()
-    cursor.execute("SET NAMES 'utf8mb4' COLLATE 'utf8mb4_general_ci'")
-    return connection
-
-# Function to log the chat into the database
-def log_chat(thread_id, user_message, assistant_response):
-    connection = get_db_connection()
-    try:
-        cursor = connection.cursor()
-        query = "INSERT INTO chatlog (thread_id, user_message, assistant_response) VALUES (%s, %s, %s)"
-        cursor.execute(query, (thread_id, user_message, assistant_response))
-        connection.commit()
-    except mysql.connector.Error as error:
-        print(f"Failed to log chat: {error}")
-    finally:
-        if connection.is_connected():
-            cursor.close()
-            connection.close()
 
 # Serve the index1.html from templates folder for the /askberater route
 @app.route("/askberater", methods=["GET"])
@@ -86,11 +55,8 @@ def ask_berater():
     messages = list(client.beta.threads.messages.list(thread_id=thread_id, run_id=run.id))
     message_content = messages[0].content[0].text
 
-    # Log the conversation to the database
-    log_chat(thread_id, user_message, message_content)
-
     # Prepare response with the session ID stored in a cookie
-    response = make_response(jsonify({"response": message_content}))
+    response = make_response(jsonify({"response": message_content.value}))
     response.set_cookie('session_id', session_id)  # Store session ID in a cookie
     
     return response
@@ -232,4 +198,3 @@ def ask7():
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)), debug=True)
-
