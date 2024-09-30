@@ -43,13 +43,13 @@ def log_chat(thread_id, user_message, assistant_response):
         connection.close()
 
 # Serve the index1.html from templates folder for the /askberater route
-@app.route("/askberater", methods=["GET"])
+@app.route("/verkaufsberater", methods=["GET"])
 def serve_frontend():
     return render_template("index1.html")  # Flask will look for this in the 'templates' folder
 
 # Handle the chat functionality for POST requests
 # Handle the chat functionality for POST requests
-@app.route("/askberater", methods=["POST"])
+@app.route("/verkaufsberater", methods=["POST"])
 def ask_berater():
     user_message = request.json.get("message")
     
