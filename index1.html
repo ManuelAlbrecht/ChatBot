@@ -80,9 +80,9 @@
         </div>
     </div>
 
-     <script>
+    <script>
         const baseUrl = 'https://chatbot-1u2f.onrender.com'; // Use your backend URL here
-        const apiRoute = '/verkaufsberater';  // Set the route here globally
+        const apiRoute = '/verkaufsberater';
 
         function appendMessage(content, className) {
             const messageDiv = document.createElement('div');
@@ -95,10 +95,13 @@
         function sendMessage() {
             const userMessage = document.getElementById('user-input').value;
             if (!userMessage) return;
+
             appendMessage(userMessage, 'user-message');
             document.getElementById('user-input').value = '';
 
-            // Fetch the response from the backend using the correct API route
+            // Change the route to any API endpoint you want to test
+            const apiRoute = '/verkaufsberater'; // Change this depending on the assistant route
+
             fetch(baseUrl + apiRoute, {
                 method: 'POST',
                 headers: {
