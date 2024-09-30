@@ -50,7 +50,7 @@ def serve_frontend():
 # Handle the chat functionality for POST requests
 # Handle the chat functionality for POST requests
 @app.route("/verkaufsberater", methods=["POST"])
-def ask_berater():
+def ask1():
     user_message = request.json.get("message")
     
     # Get or create the session ID and associate it with a thread
