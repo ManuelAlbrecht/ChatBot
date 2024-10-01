@@ -53,17 +53,16 @@ def serve_frontend():
 def ask1():
     user_message = request.json.get("message")
     
-    # Get or create the session ID and associate it with a thread
+    # Retrieve or create a new session
     session_id = request.cookies.get('session_id')
-    
-    if not session_id:  # If no session ID found, create one
-        session_id = str(uuid.uuid4())
-        session_data[session_id] = client.beta.threads.create()
 
-    if session_id not in session_data:
-        session_data[session_id] = client.beta.threads.create()
-    
-    # Use the thread ID associated with this session
+    if not session_id:
+        session_id = str(uuid.uuid4())  # Generate new session ID
+        session_data[session_id] = client.beta.threads.create()  # Create a new thread
+    elif session_id not in session_data:
+        session_data[session_id] = client.beta.threads.create()  # Create a new thread if session exists but no thread
+
+    # Get the thread ID
     thread_id = session_data[session_id].id
 
     # Create a message in the session's thread
@@ -79,16 +78,17 @@ def ask1():
     )
 
     messages = list(client.beta.threads.messages.list(thread_id=thread_id, run_id=run.id))
-    message_content = messages[0].content[0].text.value  # Extract the plain text value
+    message_content = messages[0].content[0].text.value
 
     # Log the chat (thread_id, user message, assistant response)
     log_chat(thread_id, user_message, message_content)
 
-    # Prepare response with the session ID stored in a cookie
-    response = make_response(jsonify({"response": message_content}))
-    response.set_cookie('session_id', session_id, samesite='None', secure=True)  # Store session ID in a cookie, allow cross-site requests
-    
+    # Send the session ID and thread ID back to the client (for debugging)
+    response = make_response(jsonify({"response": message_content, "thread_id": thread_id}))
+    response.set_cookie('session_id', session_id, httponly=True, samesite='Strict')  # Set session cookie securely
+
     return response
+
 
 @app.route("/askkreislaufwirtschaftsgesetz", methods=["POST"])
 def ask2():
