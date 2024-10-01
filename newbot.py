@@ -14,7 +14,7 @@ assistant_id_berater = os.getenv("ASSISTANT_ID_berater")
 client = OpenAI(api_key=key)
 app = Flask(__name__)
 # Enable CORS with credentials to allow cross-site requests
-CORS(app, supports_credentials=True, origins=["https://your-wordpress-domain.com"])  # Replace with your WordPress domain
+CORS(app, supports_credentials=True, origins=["https://probenahmeprotokoll.de"])  # Replace with your WordPress domain
 
 # Dictionary to store session data (e.g., thread IDs)
 session_data = {}
