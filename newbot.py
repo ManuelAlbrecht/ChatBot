@@ -13,7 +13,8 @@ assistant_id_berater = os.getenv("ASSISTANT_ID_berater")
 
 client = OpenAI(api_key=key)
 app = Flask(__name__)
-CORS(app)
+# Enable CORS with credentials to allow cross-site requests
+CORS(app, supports_credentials=True, origins=["https://your-wordpress-domain.com"])  # Replace with your WordPress domain
 
 # Dictionary to store session data (e.g., thread IDs)
 session_data = {}
@@ -47,7 +48,6 @@ def log_chat(thread_id, user_message, assistant_response):
 def serve_frontend():
     return render_template("index1.html")  # Flask will look for this in the 'templates' folder
 
-# Handle the chat functionality for POST requests
 # Handle the chat functionality for POST requests
 @app.route("/askberater", methods=["POST"])
 def ask1():
@@ -86,7 +86,7 @@ def ask1():
 
     # Prepare response with the session ID stored in a cookie
     response = make_response(jsonify({"response": message_content}))
-    response.set_cookie('session_id', session_id)  # Store session ID in a cookie
+    response.set_cookie('session_id', session_id, samesite='None', secure=True)  # Store session ID in a cookie, allow cross-site requests
     
     return response
 
