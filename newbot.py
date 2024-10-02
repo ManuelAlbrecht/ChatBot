@@ -85,7 +85,7 @@ def ask1():
 
     # Send the session ID and thread ID back to the client (for debugging)
     response = make_response(jsonify({"response": message_content, "thread_id": thread_id}))
-    response.set_cookie('session_id', session_id, httponly=True, samesite='Strict')  # Set session cookie securely
+    response.set_cookie('session_id', session_id, httponly=True, samesite='None', secure=True)  # Set session cookie securely
 
     return response
 
