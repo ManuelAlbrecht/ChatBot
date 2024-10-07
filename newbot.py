@@ -49,6 +49,7 @@ def refresh_access_token():
         print(f"Access token refreshed: {access_token}")
     else:
         print(f"Failed to refresh access token: {response.text}")
+        raise Exception("Failed to refresh access token")
 
 def ensure_valid_access_token():
     global token_last_refresh_time, token_expires_in
@@ -58,40 +59,44 @@ def ensure_valid_access_token():
 
 # Function to send data to Zoho CRM
 def send_to_zoho(first_name, last_name, phone, zip_code, description):
-    ensure_valid_access_token()  # Ensure the access token is valid before making the request
+    try:
+        ensure_valid_access_token()  # Ensure the access token is valid before making the request
 
-    zoho_url = "https://www.zohoapis.eu/crm/v3/Deals"  # Endpoint for creating a deal
-    
-    headers = {
-        'Authorization': f'Zoho-oauthtoken {access_token}',
-        'Content-Type': 'application/json',
-    }
+        zoho_url = "https://www.zohoapis.eu/crm/v3/Deals"  # Endpoint for creating a deal
+        
+        headers = {
+            'Authorization': f'Zoho-oauthtoken {access_token}',
+            'Content-Type': 'application/json',
+        }
 
-    deal_name = f"Deal with {first_name} {last_name}"
+        deal_name = f"Deal with {first_name} {last_name}"
 
-    data = {
-        "data": [
-            {
-                "Deal_Name": deal_name,
-                "Vorname": first_name,
-                "Nachname": last_name,
-                "Mobil": phone,
-                "Postleitzahl_Temp": zip_code,
-                "Description": description,
-                "Pipeline": "Standard",  # Replace with the actual pipeline
-                "Stage": "Erstellt"  # Replace with the actual stage
-            }
-        ]
-    }
+        data = {
+            "data": [
+                {
+                    "Deal_Name": deal_name,
+                    "Vorname": first_name,
+                    "Nachname": last_name,
+                    "Mobil": phone,
+                    "Postleitzahl_Temp": zip_code,
+                    "Description": description,
+                    "Pipeline": "Standard",  # Replace with the actual pipeline
+                    "Stage": "Erstellt"  # Replace with the actual stage
+                }
+            ]
+        }
 
-    # Make the POST request to Zoho CRM
-    response = requests.post(zoho_url, json=data, headers=headers)
-    
-    # Log and check response status and full content
-    print(f"Response Status Code: {response.status_code}")
-    print(f"Response Content: {response.content.decode('utf-8')}")
+        # Make the POST request to Zoho CRM
+        response = requests.post(zoho_url, json=data, headers=headers)
+        
+        # Log response status and full content for debugging
+        print(f"Zoho Response Status Code: {response.status_code}")
+        print(f"Zoho Response Content: {response.content.decode('utf-8')}")
 
-    return response.json() if response.status_code == 200 else {"error": response.content.decode('utf-8')}
+        return response.json() if response.status_code == 200 else {"error": response.content.decode('utf-8')}
+    except Exception as e:
+        print(f"Error while sending to Zoho: {e}")
+        return {"status": "error", "message": str(e)}
 
 # Function to connect to the MySQL database
 def get_db_connection():
@@ -179,7 +184,6 @@ def ask1():
 
         print(f"Zoho Response: {zoho_response}")
         
-        # After submission, continue the conversation
         response_message = (f"Danke {user_details['first_name']}! Ihr Angebot wurde übermittelt. "
                             "Möchten Sie noch etwas wissen oder eine andere Frage stellen?")
 
@@ -188,7 +192,7 @@ def ask1():
         session_data[session_id]['user_details'] = {}
 
     else:
-        # If no offer-making intent, process as normal conversation
+        # Normal conversation if no offer intent
         client.beta.threads.messages.create(
             thread_id=thread_id,
             role="user",
