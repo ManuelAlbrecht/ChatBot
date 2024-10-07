@@ -5,6 +5,8 @@ from openai import OpenAI
 from dotenv import load_dotenv
 import pymysql
 import uuid
+import requests
+import time
 
 load_dotenv()
 
@@ -14,10 +16,75 @@ assistant_id_berater = os.getenv("ASSISTANT_ID_berater")
 client = OpenAI(api_key=key)
 app = Flask(__name__)
 # Enable CORS with credentials to allow cross-site requests
-CORS(app, supports_credentials=True, origins=["https://probenahmeprotokoll.de"])  # Replace with your WordPress domain
+CORS(app, supports_credentials=True, origins=["https://probenahmeprotokoll.de"])
 
-# Dictionary to store session data (e.g., thread IDs)
+# Dictionary to store session data (thread IDs and user details)
 session_data = {}
+
+# Variables to manage tokens for Zoho API (use your actual values)
+access_token = "1000.821b23d0f8dcafeb213626d51d6e9459.59a1c8eaabf2b3a9ae4e4e1d866491ec"
+refresh_token = "1000.259787181a80f3211fb817478fc79939.8db39ac9cf076db3e98573cc678f1b87"
+token_expires_in = 3600  # Time in seconds for token expiration (initially 3600)
+token_last_refresh_time = time.time()
+
+# Function to refresh the access token using the refresh token
+def refresh_access_token():
+    global access_token, token_last_refresh_time, token_expires_in
+    
+    url = "https://accounts.zoho.eu/oauth/v2/token"  # Replace with your region-specific Zoho token endpoint
+    
+    payload = {
+        'refresh_token': refresh_token,
+        'client_id': '1000.ACVWWHZHYUKV53ZYWS3LG367BQYKTH',  # Replace with your client ID
+        'client_secret': '9eb75a2b58c010a674e37be778409967f73f5215c7',  # Replace with your client secret
+        'grant_type': 'refresh_token'
+    }
+
+    response = requests.post(url, params=payload)
+    if response.status_code == 200:
+        response_data = response.json()
+        access_token = response_data['access_token']
+        token_expires_in = response_data.get('expires_in', 3600)
+        token_last_refresh_time = time.time()
+        print(f"Access token refreshed: {access_token}")
+    else:
+        print(f"Failed to refresh access token: {response.text}")
+
+def ensure_valid_access_token():
+    global token_last_refresh_time, token_expires_in
+    current_time = time.time()
+    if current_time - token_last_refresh_time >= token_expires_in:
+        refresh_access_token()
+
+# Function to send data to Zoho CRM
+def send_to_zoho(first_name, last_name, phone, zip_code, description):
+    ensure_valid_access_token()
+    zoho_url = "https://www.zohoapis.eu/crm/v3/Deals"
+    
+    headers = {
+        'Authorization': f'Zoho-oauthtoken {access_token}',
+        'Content-Type': 'application/json',
+    }
+
+    deal_name = f"Deal with {first_name} {last_name}"
+
+    data = {
+        "data": [
+            {
+                "Deal_Name": deal_name,
+                "Vorname": first_name,
+                "Nachname": last_name,
+                "Mobil": phone,
+                "Postleitzahl_Temp": zip_code,
+                "Description": description,
+                "Pipeline": "Standard",  # Replace with actual pipeline name
+                "Stage": "Erstellt"  # Replace with actual stage
+            }
+        ]
+    }
+
+    response = requests.post(zoho_url, json=data, headers=headers)
+    return response.json()
 
 # Function to connect to the MySQL database
 def get_db_connection():
@@ -43,186 +110,97 @@ def log_chat(thread_id, user_message, assistant_response):
     finally:
         connection.close()
 
-# Serve the index1.html from templates folder for the /askberater route
-@app.route("/askberater", methods=["GET"])
-def serve_frontend():
-    return render_template("index1.html")  # Flask will look for this in the 'templates' folder
-
 # Handle the chat functionality for POST requests
 @app.route("/askberater", methods=["POST"])
 def ask1():
-    user_message = request.json.get("message")
+    user_message = request.json.get("message").lower()
     
-    # Retrieve or create a new session
     session_id = request.cookies.get('session_id')
-
     if not session_id:
-        session_id = str(uuid.uuid4())  # Generate new session ID
-        session_data[session_id] = client.beta.threads.create()  # Create a new thread
+        session_id = str(uuid.uuid4())
+        session_data[session_id] = {
+            'thread': client.beta.threads.create(),
+            'step': None,
+            'user_details': {}
+        }
     elif session_id not in session_data:
-        session_data[session_id] = client.beta.threads.create()  # Create a new thread if session exists but no thread
+        session_data[session_id] = {
+            'thread': client.beta.threads.create(),
+            'step': None,
+            'user_details': {}
+        }
 
-    # Get the thread ID
-    thread_id = session_data[session_id].id
+    thread_id = session_data[session_id]['thread'].id
 
-    # Create a message in the session's thread
-    client.beta.threads.messages.create(
-        thread_id=thread_id,
-        role="user",
-        content=user_message,
-    )
+    # Trigger offer-making flow if the user expresses intent
+    if "angebot machen" in user_message or "ich möchte ein angebot" in user_message:
+        session_data[session_id]['step'] = "first_name"
+        response_message = "Großartig! Beginnen wir mit Ihrem Vornamen. Wie lautet Ihr Vorname?"
 
-    # Generate a response
-    run = client.beta.threads.runs.create_and_poll(
-        thread_id=thread_id, assistant_id=assistant_id_berater
-    )
+    elif session_data[session_id]['step'] == "first_name":
+        session_data[session_id]['user_details']['first_name'] = user_message
+        session_data[session_id]['step'] = "last_name"
+        response_message = "Danke schön! Wie lautet Ihr Nachname?"
 
-    messages = list(client.beta.threads.messages.list(thread_id=thread_id, run_id=run.id))
-    message_content = messages[0].content[0].text.value
+    elif session_data[session_id]['step'] == "last_name":
+        session_data[session_id]['user_details']['last_name'] = user_message
+        session_data[session_id]['step'] = "phone"
+        response_message = "Habe es! Was ist Ihre Telefonnummer?"
 
-    # Log the chat (thread_id, user message, assistant response)
-    log_chat(thread_id, user_message, message_content)
+    elif session_data[session_id]['step'] == "phone":
+        session_data[session_id]['user_details']['phone'] = user_message
+        session_data[session_id]['step'] = "zip_code"
+        response_message = "Großartig! Bitte geben Sie Ihre Postleitzahl an."
 
-    # Send the session ID and thread ID back to the client (for debugging)
-    response = make_response(jsonify({"response": message_content, "thread_id": thread_id}))
-    response.set_cookie('session_id', session_id, httponly=True, samesite='None', secure=True)  # Set session cookie securely
+    elif session_data[session_id]['step'] == "zip_code":
+        session_data[session_id]['user_details']['zip_code'] = user_message
+        session_data[session_id]['step'] = "description"
+        response_message = "Fast fertig! Bitte geben Sie eine Beschreibung für das Angebot ein."
+
+    elif session_data[session_id]['step'] == "description":
+        session_data[session_id]['user_details']['description'] = user_message
+        user_details = session_data[session_id]['user_details']
+
+        # Send the details to Zoho CRM
+        zoho_response = send_to_zoho(
+            first_name=user_details['first_name'],
+            last_name=user_details['last_name'],
+            phone=user_details['phone'],
+            zip_code=user_details['zip_code'],
+            description=user_details['description']
+        )
+
+        print(f"Zoho Response: {zoho_response}")
+        
+        # After submission, continue the conversation
+        response_message = (f"Danke {user_details['first_name']}! Ihr Angebot wurde übermittelt. "
+                            "Möchten Sie noch etwas wissen oder eine andere Frage stellen?")
+
+        # Clear session data, but keep the conversation going
+        session_data[session_id]['step'] = None
+        session_data[session_id]['user_details'] = {}
+
+    else:
+        # If no offer-making intent, process as normal conversation
+        client.beta.threads.messages.create(
+            thread_id=thread_id,
+            role="user",
+            content=user_message,
+        )
+
+        run = client.beta.threads.runs.create_and_poll(
+            thread_id=thread_id, assistant_id=assistant_id_berater
+        )
+
+        messages = list(client.beta.threads.messages.list(thread_id=thread_id, run_id=run.id))
+        response_message = messages[0].content[0].text.value
+
+    log_chat(thread_id, user_message, response_message)
+
+    response = make_response(jsonify({"response": response_message, "thread_id": thread_id}))
+    response.set_cookie('session_id', session_id, httponly=True, samesite='None', secure=True)
 
     return response
-
-
-@app.route("/askkreislaufwirtschaftsgesetz", methods=["POST"])
-def ask2():
-    user_message = request.json.get("message")
-
-    # Create a message
-    client.beta.threads.messages.create(
-        thread_id=thread.id,
-        role="user",
-        content=user_message,
-    )
-
-    # Generate a response
-    run = client.beta.threads.runs.create_and_poll(
-        thread_id=thread.id, assistant_id=assistant_id_kreislaufwirtschaftsgesetz
-    )
-
-    messages = list(client.beta.threads.messages.list(thread_id=thread.id, run_id=run.id))
-    message_content = messages[0].content[0].text
-
-    return jsonify({"response": message_content.value})
-
-
-@app.route("/askbundesbodenschutzverordnung", methods=["POST"])
-def ask3():
-    user_message = request.json.get("message")
-
-    # Create a message
-    client.beta.threads.messages.create(
-        thread_id=thread.id,
-        role="user",
-        content=user_message,
-    )
-
-    # Generate a response
-    run = client.beta.threads.runs.create_and_poll(
-        thread_id=thread.id, assistant_id=assistant_id_bundesbodenschutzverordnung
-    )
-
-    messages = list(client.beta.threads.messages.list(thread_id=thread.id, run_id=run.id))
-    message_content = messages[0].content[0].text
-
-    return jsonify({"response": message_content.value})
-
-
-@app.route("/asklaga_pn_98", methods=["POST"])
-def ask4():
-    user_message = request.json.get("message")
-
-    # Create a message
-    client.beta.threads.messages.create(
-        thread_id=thread.id,
-        role="user",
-        content=user_message,
-    )
-
-    # Generate a response
-    run = client.beta.threads.runs.create_and_poll(
-        thread_id=thread.id, assistant_id=assistant_id_laga_pn_98
-    )
-
-    messages = list(client.beta.threads.messages.list(thread_id=thread.id, run_id=run.id))
-    message_content = messages[0].content[0].text
-
-    return jsonify({"response": message_content.value})
-
-
-@app.route("/askErsatzbaustoffverordnung", methods=["POST"])
-def ask5():
-    user_message = request.json.get("message")
-
-    # Create a message
-    client.beta.threads.messages.create(
-        thread_id=thread.id,
-        role="user",
-        content=user_message,
-    )
-
-    # Generate a response
-    run = client.beta.threads.runs.create_and_poll(
-        thread_id=thread.id, assistant_id=assistant_id_Ersatzbaustoffverordnung
-    )
-
-    messages = list(client.beta.threads.messages.list(thread_id=thread.id, run_id=run.id))
-    message_content = messages[0].content[0].text
-
-    return jsonify({"response": message_content.value})
-
-
-@app.route("/askDeponieverordnung", methods=["POST"])
-def ask6():
-    user_message = request.json.get("message")
-
-    # Create a message
-    client.beta.threads.messages.create(
-        thread_id=thread.id,
-        role="user",
-        content=user_message,
-    )
-
-    # Generate a response
-    run = client.beta.threads.runs.create_and_poll(
-        thread_id=thread.id, assistant_id=assistant_id_Deponieverordnung
-    )
-
-    messages = list(client.beta.threads.messages.list(thread_id=thread.id, run_id=run.id))
-    message_content = messages[0].content[0].text
-
-    return jsonify({"response": message_content.value})
-    
-
-@app.route("/askProbenahmeprotokoll", methods=["POST"])
-def ask7():
-    user_message = request.json.get("message")
-
-    # Create a message
-    client.beta.threads.messages.create(
-        thread_id=thread.id,
-        role="user",
-        content=user_message,
-    )
-
-    # Generate a response
-    run = client.beta.threads.runs.create_and_poll(
-        thread_id=thread.id, assistant_id=assistant_id_Probenahmeprotokoll
-    )
-
-    messages = list(client.beta.threads.messages.list(thread_id=thread.id, run_id=run.id))
-    message_content = messages[0].content[0].text
-
-    return jsonify({"response": message_content.value})
-
-
-
 
 
 if __name__ == "__main__":
