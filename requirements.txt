@@ -26,4 +26,3 @@ flask-cors==3.0.10
 mysql-connector-python==8.0.27
 pymysql==1.0.2
 requests==2.31.0
-time
