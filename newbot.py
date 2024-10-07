@@ -58,8 +58,9 @@ def ensure_valid_access_token():
 
 # Function to send data to Zoho CRM
 def send_to_zoho(first_name, last_name, phone, zip_code, description):
-    ensure_valid_access_token()
-    zoho_url = "https://www.zohoapis.eu/crm/v3/Deals"
+    ensure_valid_access_token()  # Ensure the access token is valid before making the request
+
+    zoho_url = "https://www.zohoapis.eu/crm/v3/Deals"  # Endpoint for creating a deal
     
     headers = {
         'Authorization': f'Zoho-oauthtoken {access_token}',
@@ -77,14 +78,20 @@ def send_to_zoho(first_name, last_name, phone, zip_code, description):
                 "Mobil": phone,
                 "Postleitzahl_Temp": zip_code,
                 "Description": description,
-                "Pipeline": "Standard",  # Replace with actual pipeline name
-                "Stage": "Erstellt"  # Replace with actual stage
+                "Pipeline": "Standard",  # Replace with the actual pipeline
+                "Stage": "Erstellt"  # Replace with the actual stage
             }
         ]
     }
 
+    # Make the POST request to Zoho CRM
     response = requests.post(zoho_url, json=data, headers=headers)
-    return response.json()
+    
+    # Log and check response status and error (if any)
+    print(f"Response Status Code: {response.status_code}")
+    print(f"Response Content: {response.content}")
+
+    return response.json() if response.status_code == 200 else {"error": response.content}
 
 # Function to connect to the MySQL database
 def get_db_connection():
