@@ -87,11 +87,11 @@ def send_to_zoho(first_name, last_name, phone, zip_code, description):
     # Make the POST request to Zoho CRM
     response = requests.post(zoho_url, json=data, headers=headers)
     
-    # Log and check response status and error (if any)
+    # Log and check response status and full content
     print(f"Response Status Code: {response.status_code}")
-    print(f"Response Content: {response.content}")
+    print(f"Response Content: {response.content.decode('utf-8')}")
 
-    return response.json() if response.status_code == 200 else {"error": response.content}
+    return response.json() if response.status_code == 200 else {"error": response.content.decode('utf-8')}
 
 # Function to connect to the MySQL database
 def get_db_connection():
