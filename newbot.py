@@ -57,7 +57,7 @@ def ensure_valid_access_token():
     if current_time - token_last_refresh_time >= token_expires_in:
         refresh_access_token()
 
-# Function to send data to Zoho CRM
+# Zoho CRM API integration with Deal_Name, Pipeline, and Stage
 def send_to_zoho(first_name, last_name, phone, zip_code, description):
     try:
         ensure_valid_access_token()  # Ensure the access token is valid before making the request
@@ -69,8 +69,14 @@ def send_to_zoho(first_name, last_name, phone, zip_code, description):
             'Content-Type': 'application/json',
         }
 
+        # Generate Deal_Name using first and last name
         deal_name = f"Deal with {first_name} {last_name}"
 
+        # Default pipeline value (replace with the actual pipeline expected by your CRM)
+        pipeline_value = "Standard"  # Replace with valid pipeline
+        stage_value = "Erstellt"  # Replace with valid stage in the pipeline
+
+        # Construct the data payload
         data = {
             "data": [
                 {
@@ -80,20 +86,20 @@ def send_to_zoho(first_name, last_name, phone, zip_code, description):
                     "Mobil": phone,
                     "Postleitzahl_Temp": zip_code,
                     "Description": description,
-                    "Pipeline": "Standard",  # Replace with the actual pipeline
-                    "Stage": "Erstellt"  # Replace with the actual stage
+                    "Pipeline": pipeline_value,  # Pipeline must contain the Stage
+                    "Stage": stage_value  # Add a valid stage within the pipeline
                 }
             ]
         }
 
         # Make the POST request to Zoho CRM
         response = requests.post(zoho_url, json=data, headers=headers)
-        
-        # Log response status and full content for debugging
-        print(f"Zoho Response Status Code: {response.status_code}")
-        print(f"Zoho Response Content: {response.content.decode('utf-8')}")
+        if response.status_code == 401:  # If unauthorized, refresh token and retry once
+            refresh_access_token()
+            headers['Authorization'] = f'Zoho-oauthtoken {access_token}'
+            response = requests.post(zoho_url, json=data, headers=headers)
 
-        return response.json() if response.status_code == 200 else {"error": response.content.decode('utf-8')}
+        return response.json()
     except Exception as e:
         print(f"Error while sending to Zoho: {e}")
         return {"status": "error", "message": str(e)}
