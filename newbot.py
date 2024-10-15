@@ -16,7 +16,7 @@ assistant_id_berater = os.getenv("ASSISTANT_ID_berater")
 client = OpenAI(api_key=key)
 app = Flask(__name__)
 # Enable CORS with credentials to allow cross-site requests
-CORS(app, supports_credentials=True, origins=["https://probenahmeprotokoll.de"])
+CORS(app, supports_credentials=True, origins=["https://probenahmeprotokoll.de", "https://erdbaron.com"])
 
 # Dictionary to store session data (thread IDs and user details)
 session_data = {}
