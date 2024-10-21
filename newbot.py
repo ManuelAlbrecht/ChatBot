@@ -22,27 +22,23 @@ CORS(app, supports_credentials=True, origins=["https://probenahmeprotokoll.de", 
 # Dictionary to store session data (thread IDs and user details)
 session_data = {}
 
-# Variables to manage tokens for Zoho API (use your actual values)
-access_token = "1000.821b23d0f8dcafeb213626d51d6e9459.59a1c8eaabf2b3a9ae4e4e1d866491ec"
-refresh_token = "1000.259787181a80f3211fb817478fc79939.8db39ac9cf076db3e98573cc678f1b87"
-client_id = '1000.ACVWWHZHYUKV53ZYWS3LG367BQYKTH'  # Replace with your client ID
-client_secret = '9eb75a2b58c010a674e37be778409967f73f5215c7'  # Replace with your client secret
-token_expires_in = 3600  # Time in seconds for token expiration (initially 3600)
+# Replace the following placeholders with your actual Zoho CRM credentials
+access_token = '1000.821b23d0f8dcafeb213626d51d6e9459.59a1c8eaabf2b3a9ae4e4e1d866491ec'
+refresh_token = '1000.259787181a80f3211fb817478fc79939.8db39ac9cf076db3e98573cc678f1b87'
+client_id = '1000.ACVWWHZHYUKV53ZYWS3LG367BQYKTH'
+client_secret = '9eb75a2b58c010a674e37be778409967f73f5215c7'
+token_expires_in = 3600
 token_last_refresh_time = time.time()
 
-# Function to refresh the access token using the refresh token
 def refresh_access_token():
     global access_token, token_last_refresh_time, token_expires_in
-
-    url = "https://accounts.zoho.eu/oauth/v2/token"  # Replace with your region-specific Zoho token endpoint
-
+    url = "https://accounts.zoho.eu/oauth/v2/token"
     payload = {
         'refresh_token': refresh_token,
-        'client_id': client_id,  # Use your actual client ID
-        'client_secret': client_secret,  # Use your actual client secret
+        'client_id': client_id,
+        'client_secret': client_secret,
         'grant_type': 'refresh_token'
     }
-
     response = requests.post(url, params=payload)
     if response.status_code == 200:
         response_data = response.json()
@@ -60,7 +56,6 @@ def ensure_valid_access_token():
     if current_time - token_last_refresh_time >= token_expires_in:
         refresh_access_token()
 
-# Function to extract details from summary
 def extract_details_from_summary(summary):
     try:
         print(f"Extracting details from summary:\n{summary}")
@@ -73,10 +68,10 @@ def extract_details_from_summary(summary):
             'Email': 'email',
             'Telefon': 'phone',
             'Postleitzahl': 'zip_code',
+#            'Geplanter Start': 'planned_start',
             'Menge': 'quantity',
             'Beschreibung': 'description',
-            'Betreff': 'subject'
-            # Add other fields as necessary
+            'Betreff': 'subject'  # If needed
         }
         # Split the summary into lines
         lines = summary.splitlines()
@@ -114,7 +109,6 @@ def extract_details_from_summary(summary):
         print(f"Error extracting details from summary: {e}")
         return None
 
-# Updated send_to_zoho function
 def send_to_zoho(user_details):
     try:
         ensure_valid_access_token()  # Ensure the access token is valid before making the request
@@ -133,7 +127,7 @@ def send_to_zoho(user_details):
         zip_code = user_details.get('zip_code', '')
         description = user_details.get('description', '')
         email = user_details.get('email', '')
-        # planned_start = user_details.get('planned_start', '')
+       # planned_start = user_details.get('planned_start', '')
         quantity = user_details.get('quantity', '')
         subject = user_details.get('subject', '')
 
@@ -142,7 +136,7 @@ def send_to_zoho(user_details):
 
         # Default pipeline value (replace with the actual pipeline expected by your CRM)
         pipeline_value = "Standard"  # Replace with valid pipeline name in your Zoho CRM
-        stage_value = "Erstellt"     # Replace with valid stage in the pipeline
+        stage_value = "Erstellt"  # Replace with valid stage in the pipeline
 
         # Construct the data payload
         data = {
@@ -154,9 +148,9 @@ def send_to_zoho(user_details):
                     "Mobil": phone,
                     "Postleitzahl_Temp": zip_code,
                     "Description": description,
-                    "E_Mail": email,  # Corrected email field name
-                    # "Geplanter_Start": planned_start,
-                    "Geschätzte_Menge_m³": quantity,
+                    "E_Mail": email,
+              #      "Geplanter_Start": planned_start,
+                    "Gesch_tzte_Menge_m": quantity,
                     "Betreff": subject,
                     "Pipeline": pipeline_value,
                     "Stage": stage_value,
@@ -165,9 +159,6 @@ def send_to_zoho(user_details):
                 }
             ]
         }
-
-        # Log the data being sent for debugging
-        print("Data being sent to Zoho CRM:", data)
 
         # Make the POST request to Zoho CRM
         response = requests.post(zoho_url, json=data, headers=headers)
@@ -181,7 +172,7 @@ def send_to_zoho(user_details):
             print("Response:", response.json())
         else:
             print(f"Failed to send data to Zoho CRM. Status Code: {response.status_code}")
-            print("Error Response:", response.text)
+            print("Response:", response.text)
 
     except Exception as e:
         print(f"Error while sending to Zoho: {e}")
@@ -213,9 +204,9 @@ def log_chat(thread_id, user_message, assistant_response):
 # Handle the chat functionality for POST requests
 @app.route("/askberater", methods=["POST"])
 def ask1():
+    print("Received request at /askberater")
     user_message = request.json.get("message", "")
     print(f"User message: {user_message}")
-    user_message_lower = user_message.lower()
     session_id = request.cookies.get('session_id')
     if not session_id:
         session_id = str(uuid.uuid4())
@@ -234,34 +225,19 @@ def ask1():
         print(f"Session data initialized for existing session ID: {session_id}")
     thread_id = session_data[session_id]['thread'].id
     print(f"Using thread ID: {thread_id}")
-
-    # Send user message to assistant
-    client.beta.threads.messages.create(
-        thread_id=thread_id,
-        role="user",
-        content=user_message,
-    )
-
-    # Run assistant
+    client.beta.threads.messages.create(thread_id=thread_id, role="user", content=user_message)
     run = client.beta.threads.runs.create_and_poll(
-        thread_id=thread_id, assistant_id=assistant_id_berater
-    )
-
-    # Get assistant's response
-    messages = list(client.beta.threads.messages.list(thread_id=thread_id, run_id=run.id))
+        thread_id=thread_id, assistant_id=assistant_id_berater)
+    messages = list(client.beta.threads.messages.list(
+        thread_id=thread_id, run_id=run.id))
     response_message = messages[0].content[0].text.value
     print(f"Response from OpenAI: {response_message}")
-
     # Store the summary for confirmation if present
     if "zusammenfassung" in response_message.lower():
         session_data[session_id]['summary'] = response_message
         print(f"Summary stored: {session_data[session_id]['summary']}")
     # If user confirms the summary, process it
-    if ("yes this is correct" in user_message_lower or 
-        "this is correct" in user_message_lower or 
-        "ja, das ist korrekt" in user_message_lower or 
-        "ja" in user_message_lower or
-        "das ist korrekt" in user_message_lower):
+    if "yes this is correct" in user_message.lower() or "this is correct" in user_message.lower():
         confirmed_summary = session_data[session_id].get('summary')
         if confirmed_summary:
             print(f"Confirmed Summary: {confirmed_summary}")
@@ -273,24 +249,14 @@ def ask1():
                 print("Session Data:", session_data[session_id])
                 # Send data to Zoho CRM
                 send_to_zoho(user_details)
-                # Inform the user
-                response_message = (f"Danke {user_details.get('first_name', '')}! "
-                                    "Ihre Daten wurden erfolgreich übermittelt.")
             else:
                 print("Failed to parse user details from the summary.")
-                response_message = "Entschuldigung, es gab ein Problem beim Verarbeiten Ihrer Daten."
         else:
             print("No summary found to confirm.")
-    else:
-        # Continue the conversation
-        pass  # The assistant's response is already obtained
-
-    # Log chat
-    log_chat(thread_id, user_message, response_message)
-
-    response = make_response(jsonify({"response": response_message, "thread_id": thread_id}))
-    response.set_cookie('session_id', session_id, httponly=True, samesite='None', secure=True)
-
+    response = make_response(jsonify(
+        {"response": response_message, "thread_id": thread_id}))
+    response.set_cookie('session_id', session_id,
+                        httponly=True, samesite='None', secure=True)
     return response
 
 
