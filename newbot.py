@@ -265,6 +265,7 @@ def ask1():
         logger.info("Received request at /askberater")
         user_message = request.json.get("message", "")
         logger.info(f"User message: {user_message}")
+        user_message_lower = user_message.lower()
         session_id = request.cookies.get('session_id')
         if not session_id:
             session_id = str(uuid.uuid4())
@@ -295,7 +296,20 @@ def ask1():
             session_data[session_id]['summary'] = response_message
             logger.info(f"Summary stored for session {session_id}.")
         # If user confirms the summary, process it
-        if "yes this is correct" in user_message.lower() or "this is correct" in user_message.lower():
+        confirmation_phrases = [
+            "yes this is correct",
+            "this is correct",
+            "ja",
+            "ja, das ist korrekt",
+            "korrekt",
+            "das ist korrekt",
+            "ja, das stimmt",
+            "stimmt",
+            "ja, genau",
+            "genau"
+        ]
+        if any(phrase in user_message_lower for phrase in confirmation_phrases):
+            logger.info("User confirmed the summary.")
             confirmed_summary = session_data[session_id].get('summary')
             if confirmed_summary:
                 logger.info(f"Confirmed Summary: {confirmed_summary}")
@@ -307,10 +321,16 @@ def ask1():
                     logger.info(f"Session Data: {session_data[session_id]}")
                     # Send data to Zoho CRM
                     send_to_zoho(user_details)
+                    # Inform the user
+                    response_message = (f"Danke {user_details.get('first_name', '')}! "
+                                        "Ihre Daten wurden erfolgreich übermittelt.")
                 else:
                     logger.error("Failed to parse user details from the summary.")
+                    response_message = "Entschuldigung, es gab ein Problem beim Verarbeiten Ihrer Daten."
             else:
                 logger.error("No summary found to confirm.")
+        else:
+            logger.info("User did not confirm the summary.")
         # Log chat
         log_chat(thread_id, user_message, response_message)
         response = make_response(jsonify(
