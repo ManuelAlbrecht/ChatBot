@@ -8,6 +8,7 @@ import uuid
 import requests
 import time
 import logging
+from datetime import datetime  # Added
 
 load_dotenv()
 
@@ -112,7 +113,8 @@ def extract_details_from_summary(summary):
             'Postleitzahl': 'zip_code',
             'Menge': 'quantity',
             'Beschreibung': 'description',
-            'Betreff': 'subject'  # If needed
+            'Betreff': 'subject',  # If needed
+            'Geplanter Start': 'geplanter_start'  # Added
         }
         # Split the summary into lines
         lines = summary.splitlines()
@@ -138,7 +140,7 @@ def extract_details_from_summary(summary):
             else:
                 logger.warning(f"Ignored line without colon: {line}")
         # Check if all necessary fields are present
-        required_fields = ['first_name', 'last_name', 'email', 'phone', 'zip_code', 'quantity', 'description']
+        required_fields = ['first_name', 'last_name', 'email', 'phone', 'zip_code', 'quantity', 'description', 'geplanter_start']  # Added 'geplanter_start'
         if all(field in details for field in required_fields):
             logger.info(f"Parsed Details: {details}")
             return details
@@ -170,6 +172,19 @@ def send_to_zoho(user_details):
         email = user_details.get('email', '')
         quantity = user_details.get('quantity', '')
         subject = user_details.get('subject', '')
+        geplanter_start = user_details.get('geplanter_start', '')  # Added
+
+        # Parse 'geplanter_start' to 'YYYY-MM-DD' format
+        if geplanter_start:
+            try:
+                # Try parsing in German date format 'DD.MM.YYYY'
+                date_obj = datetime.strptime(geplanter_start, '%d.%m.%Y')
+                geplanter_start_formatted = date_obj.strftime('%Y-%m-%d')
+            except ValueError:
+                logger.error(f"Invalid date format for Geplanter Start: {geplanter_start}")
+                geplanter_start_formatted = ''
+        else:
+            geplanter_start_formatted = ''
 
         # Generate Deal_Name using first and last name
         deal_name = f"Deal with {first_name} {last_name}"
@@ -194,7 +209,8 @@ def send_to_zoho(user_details):
                     "Pipeline": pipeline_value,
                     "Stage": stage_value,
                     # Add other fields as needed
-                    "Lead_Source": "Chatbot"
+                    "Lead_Source": "Chatbot",
+                    "Geplanter_Start": geplanter_start_formatted  # Added
                 }
             ]
         }
