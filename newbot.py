@@ -189,7 +189,7 @@ def send_to_zoho(user_details):
                     "Postleitzahl_Temp": zip_code,
                     "Description": description,
                     "E_Mail": email,
-                    "Geschätzte_Menge_m": quantity,
+                    "Gesch_tzte_Menge_m": quantity,
                     "Betreff": subject,
                     "Pipeline": pipeline_value,
                     "Stage": stage_value,
