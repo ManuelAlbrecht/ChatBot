@@ -308,7 +308,11 @@ def ask1():
         response_message = messages[0].content[0].text.value
         logger.info(f"Response from OpenAI: {response_message}")
         # Store the summary for confirmation if present
-        if "zusammenfassung" in response_message.lower():
+        if ("zusammenfassung" in response_message.lower() or 
+            "überblick" in response_message.lower() or 
+            "summary" in response_message.lower() or 
+            "zusammenfassen" in response_message.lower() or 
+            "zusammen" in response_message.lower()):
             session_data[session_id]['summary'] = response_message
             logger.info(f"Summary stored for session {session_id}.")
         # If user confirms the summary, process it
