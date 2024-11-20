@@ -318,6 +318,7 @@ def ask1():
         # If user confirms the summary, process it
         confirmation_phrases = [
             "yes this is correct",
+            "yes",
             "this is correct",
             "ja",
             "ja, das ist korrekt",
