@@ -8,7 +8,7 @@ import uuid
 import requests
 import time
 import logging
-from datetime import datetime  # Added
+from datetime import datetime
 
 load_dotenv()
 
@@ -288,14 +288,16 @@ def ask1():
             session_data[session_id] = {
                 'thread': client.beta.threads.create(),
                 'user_details': {},
-                'summary': None
+                'summary': None,
+                'awaiting_confirmation': False  # Added
             }
             logger.info(f"New session created with ID: {session_id}")
         elif session_id not in session_data:
             session_data[session_id] = {
                 'thread': client.beta.threads.create(),
                 'user_details': {},
-                'summary': None
+                'summary': None,
+                'awaiting_confirmation': False  # Added
             }
             logger.info(f"Session data initialized for existing session ID: {session_id}")
         thread_id = session_data[session_id]['thread'].id
@@ -307,6 +309,7 @@ def ask1():
             thread_id=thread_id, run_id=run.id))
         response_message = messages[0].content[0].text.value
         logger.info(f"Response from OpenAI: {response_message}")
+
         # Store the summary for confirmation if present
         if ("zusammenfassung" in response_message.lower() or 
             "überblick" in response_message.lower() or 
@@ -314,7 +317,12 @@ def ask1():
             "zusammenfassen" in response_message.lower() or 
             "zusammen" in response_message.lower()):
             session_data[session_id]['summary'] = response_message
-            logger.info(f"Summary stored for session {session_id}.")
+            session_data[session_id]['awaiting_confirmation'] = True  # Added
+            logger.info(f"Summary stored for session {session_id} and awaiting confirmation.")
+        else:
+            # Reset the awaiting_confirmation flag if no summary is provided
+            session_data[session_id]['awaiting_confirmation'] = False
+
         # If user confirms the summary, process it
         confirmation_phrases = [
             "yes this is correct",
@@ -329,29 +337,49 @@ def ask1():
             "ja, genau",
             "genau"
         ]
-        if any(phrase in user_message_lower for phrase in confirmation_phrases):
-            logger.info("User confirmed the summary.")
-            confirmed_summary = session_data[session_id].get('summary')
-            if confirmed_summary:
-                logger.info(f"Confirmed Summary: {confirmed_summary}")
-                user_details = extract_details_from_summary(confirmed_summary)
-                if user_details:
-                    session_data[session_id]['user_details'] = user_details
-                    # Log session data for debugging
-                    logger.info(f"Parsed User Details: {user_details}")
-                    logger.info(f"Session Data: {session_data[session_id]}")
-                    # Send data to Zoho CRM
-                    send_to_zoho(user_details)
-                    # Inform the user
-                    response_message = (f"Danke {user_details.get('first_name', '')}! "
-                                        "Ihre Daten wurden erfolgreich übermittelt.")
+
+        # Check if we are awaiting confirmation before processing
+        if session_data[session_id].get('awaiting_confirmation', False):
+            if any(phrase in user_message_lower for phrase in confirmation_phrases):
+                logger.info("User confirmed the summary.")
+                confirmed_summary = session_data[session_id].get('summary')
+                if confirmed_summary:
+                    logger.info(f"Confirmed Summary: {confirmed_summary}")
+                    user_details = extract_details_from_summary(confirmed_summary)
+                    if user_details:
+                        session_data[session_id]['user_details'] = user_details
+                        # Reset the awaiting_confirmation flag
+                        session_data[session_id]['awaiting_confirmation'] = False
+                        # Clear the summary after processing
+                        session_data[session_id]['summary'] = None
+                        # Log session data for debugging
+                        logger.info(f"Parsed User Details: {user_details}")
+                        logger.info(f"Session Data: {session_data[session_id]}")
+                        # Send data to Zoho CRM
+                        send_to_zoho(user_details)
+                        # Inform the user
+                        response_message = (f"Danke {user_details.get('first_name', '')}! "
+                                            "Ihre Daten wurden erfolgreich übermittelt.")
+                    else:
+                        logger.error("Failed to parse user details from the summary.")
+                        response_message = "Entschuldigung, es gab ein Problem beim Verarbeiten Ihrer Daten."
+                        # Reset the awaiting_confirmation flag
+                        session_data[session_id]['awaiting_confirmation'] = False
+                        # Clear the summary after processing
+                        session_data[session_id]['summary'] = None
                 else:
-                    logger.error("Failed to parse user details from the summary.")
-                    response_message = "Entschuldigung, es gab ein Problem beim Verarbeiten Ihrer Daten."
+                    logger.error("No summary found to confirm.")
+                    response_message = "Entschuldigung, es gab keine Zusammenfassung zu bestätigen."
+                    # Reset the awaiting_confirmation flag
+                    session_data[session_id]['awaiting_confirmation'] = False
             else:
-                logger.error("No summary found to confirm.")
+                # User did not provide a confirmation phrase
+                logger.info("Awaiting confirmation, but user did not confirm.")
+                # Optionally, you can handle cases where the user says something else
+                # For now, we proceed with normal conversation
         else:
-            logger.info("User did not confirm the summary.")
+            logger.info("Not awaiting confirmation, proceeding normally.")
+
         # Log chat
         log_chat(thread_id, user_message, response_message)
         response = make_response(jsonify(
