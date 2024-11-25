@@ -113,8 +113,8 @@ def extract_details_from_summary(summary):
             'Postleitzahl': 'zip_code',
             'Menge': 'quantity',
             'Beschreibung': 'description',
-            'Betreff': 'subject',  # If needed
-            'Geplanter Start': 'geplanter_start'  # Added
+            'Betreff': 'subject',
+            'Geplanter Start': 'geplanter_start'
         }
         # Split the summary into lines
         lines = summary.splitlines()
@@ -140,7 +140,7 @@ def extract_details_from_summary(summary):
             else:
                 logger.warning(f"Ignored line without colon: {line}")
         # Check if all necessary fields are present
-        required_fields = ['first_name', 'last_name', 'email', 'phone', 'zip_code', 'quantity', 'description', 'geplanter_start']  # Added 'geplanter_start'
+        required_fields = ['first_name', 'last_name', 'email', 'phone', 'zip_code', 'quantity', 'description', 'geplanter_start']
         if all(field in details for field in required_fields):
             logger.info(f"Parsed Details: {details}")
             return details
@@ -172,7 +172,7 @@ def send_to_zoho(user_details):
         email = user_details.get('email', '')
         quantity = user_details.get('quantity', '')
         subject = user_details.get('subject', '')
-        geplanter_start = user_details.get('geplanter_start', '')  # Added
+        geplanter_start = user_details.get('geplanter_start', '')
 
         # Parse 'geplanter_start' to 'YYYY-MM-DD' format
         if geplanter_start:
@@ -210,7 +210,7 @@ def send_to_zoho(user_details):
                     "Stage": stage_value,
                     # Add other fields as needed
                     "Lead_Source": "Chatbot",
-                    "Geplanter_Start": geplanter_start_formatted  # Added
+                    "Geplanter_Start": geplanter_start_formatted
                 }
             ]
         }
@@ -289,7 +289,7 @@ def ask1():
                 'thread': client.beta.threads.create(),
                 'user_details': {},
                 'summary': None,
-                'awaiting_confirmation': False  # Added
+                'awaiting_confirmation': False
             }
             logger.info(f"New session created with ID: {session_id}")
         elif session_id not in session_data:
@@ -297,49 +297,28 @@ def ask1():
                 'thread': client.beta.threads.create(),
                 'user_details': {},
                 'summary': None,
-                'awaiting_confirmation': False  # Added
+                'awaiting_confirmation': False
             }
             logger.info(f"Session data initialized for existing session ID: {session_id}")
         thread_id = session_data[session_id]['thread'].id
         logger.info(f"Using thread ID: {thread_id}")
-        client.beta.threads.messages.create(thread_id=thread_id, role="user", content=user_message)
-        run = client.beta.threads.runs.create_and_poll(
-            thread_id=thread_id, assistant_id=assistant_id_berater)
-        messages = list(client.beta.threads.messages.list(
-            thread_id=thread_id, run_id=run.id))
-        response_message = messages[0].content[0].text.value
-        logger.info(f"Response from OpenAI: {response_message}")
 
-        # Store the summary for confirmation if present
-        if ("zusammenfassung" in response_message.lower() or 
-            "überblick" in response_message.lower() or 
-            "summary" in response_message.lower() or 
-            "zusammenfassen" in response_message.lower() or 
-            "zusammen" in response_message.lower()):
-            session_data[session_id]['summary'] = response_message
-            session_data[session_id]['awaiting_confirmation'] = True  # Added
-            logger.info(f"Summary stored for session {session_id} and awaiting confirmation.")
-        else:
-            # Reset the awaiting_confirmation flag if no summary is provided
-            session_data[session_id]['awaiting_confirmation'] = False
-
-        # If user confirms the summary, process it
-        confirmation_phrases = [
-            "yes this is correct",
-            "yes",
-            "this is correct",
-            "ja",
-            "ja, das ist korrekt",
-            "korrekt",
-            "das ist korrekt",
-            "ja, das stimmt",
-            "stimmt",
-            "ja, genau",
-            "genau"
-        ]
-
-        # Check if we are awaiting confirmation before processing
+        # First, check if we are awaiting confirmation
         if session_data[session_id].get('awaiting_confirmation', False):
+            # Check for confirmation phrases in the user's message
+            confirmation_phrases = [
+                "yes this is correct",
+                "yes",
+                "this is correct",
+                "ja",
+                "ja, das ist korrekt",
+                "korrekt",
+                "das ist korrekt",
+                "ja, das stimmt",
+                "stimmt",
+                "ja, genau",
+                "genau"
+            ]
             if any(phrase in user_message_lower for phrase in confirmation_phrases):
                 logger.info("User confirmed the summary.")
                 confirmed_summary = session_data[session_id].get('summary')
@@ -360,6 +339,13 @@ def ask1():
                         # Inform the user
                         response_message = (f"Danke {user_details.get('first_name', '')}! "
                                             "Ihre Daten wurden erfolgreich übermittelt.")
+                        # Log chat
+                        log_chat(thread_id, user_message, response_message)
+                        response = make_response(jsonify(
+                            {"response": response_message, "thread_id": thread_id}))
+                        response.set_cookie('session_id', session_id,
+                                            httponly=True, samesite='None', secure=True)
+                        return response
                     else:
                         logger.error("Failed to parse user details from the summary.")
                         response_message = "Entschuldigung, es gab ein Problem beim Verarbeiten Ihrer Daten."
@@ -367,18 +353,60 @@ def ask1():
                         session_data[session_id]['awaiting_confirmation'] = False
                         # Clear the summary after processing
                         session_data[session_id]['summary'] = None
+                        # Log chat
+                        log_chat(thread_id, user_message, response_message)
+                        response = make_response(jsonify(
+                            {"response": response_message, "thread_id": thread_id}))
+                        response.set_cookie('session_id', session_id,
+                                            httponly=True, samesite='None', secure=True)
+                        return response
                 else:
                     logger.error("No summary found to confirm.")
                     response_message = "Entschuldigung, es gab keine Zusammenfassung zu bestätigen."
                     # Reset the awaiting_confirmation flag
                     session_data[session_id]['awaiting_confirmation'] = False
+                    # Log chat
+                    log_chat(thread_id, user_message, response_message)
+                    response = make_response(jsonify(
+                        {"response": response_message, "thread_id": thread_id}))
+                    response.set_cookie('session_id', session_id,
+                                        httponly=True, samesite='None', secure=True)
+                    return response
             else:
                 # User did not provide a confirmation phrase
                 logger.info("Awaiting confirmation, but user did not confirm.")
-                # Optionally, you can handle cases where the user says something else
-                # For now, we proceed with normal conversation
+                # Optionally, prompt the user again
+                response_message = "Bitte bestätigen Sie die Zusammenfassung oder teilen Sie mit, was angepasst werden muss."
+                # Log chat
+                log_chat(thread_id, user_message, response_message)
+                response = make_response(jsonify(
+                    {"response": response_message, "thread_id": thread_id}))
+                response.set_cookie('session_id', session_id,
+                                    httponly=True, samesite='None', secure=True)
+                return response
+
+        # Not awaiting confirmation, proceed to send the user's message to OpenAI
+        logger.info("Not awaiting confirmation, proceeding to send message to OpenAI.")
+        client.beta.threads.messages.create(thread_id=thread_id, role="user", content=user_message)
+        run = client.beta.threads.runs.create_and_poll(
+            thread_id=thread_id, assistant_id=assistant_id_berater)
+        messages = list(client.beta.threads.messages.list(
+            thread_id=thread_id, run_id=run.id))
+        response_message = messages[0].content[0].text.value
+        logger.info(f"Response from OpenAI: {response_message}")
+
+        # Store the summary for confirmation if present
+        if ("zusammenfassung" in response_message.lower() or 
+            "überblick" in response_message.lower() or 
+            "summary" in response_message.lower() or 
+            "zusammenfassen" in response_message.lower() or 
+            "zusammen" in response_message.lower()):
+            session_data[session_id]['summary'] = response_message
+            session_data[session_id]['awaiting_confirmation'] = True
+            logger.info(f"Summary stored for session {session_id} and awaiting confirmation.")
         else:
-            logger.info("Not awaiting confirmation, proceeding normally.")
+            # Do not reset awaiting_confirmation here
+            pass
 
         # Log chat
         log_chat(thread_id, user_message, response_message)
