@@ -283,19 +283,21 @@ def ask1():
         logger.info(f"User message: {user_message}")
         user_message_lower = user_message.lower()
         session_id = request.cookies.get('session_id')
-
         if not session_id:
-            # Session cannot be maintained because cookies are not set
-            response = jsonify({"response": "Session cannot be maintained."})
-            response.status_code = 400  # Bad Request
-            return response
-
+            session_id = str(uuid.uuid4())
+            session_data[session_id] = {
+                'thread': client.beta.threads.create(),
+                'user_details': {},
+                'summary': None
+            }
+            logger.info(f"New session created with ID: {session_id}")
         elif session_id not in session_data:
-            # This implies that the session_id is not recognized (e.g., cookies not maintained)
-            response = jsonify({"response": "Session cannot be maintained."})
-            response.status_code = 400  # Bad Request
-            return response
-
+            session_data[session_id] = {
+                'thread': client.beta.threads.create(),
+                'user_details': {},
+                'summary': None
+            }
+            logger.info(f"Session data initialized for existing session ID: {session_id}")
         thread_id = session_data[session_id]['thread'].id
         logger.info(f"Using thread ID: {thread_id}")
         client.beta.threads.messages.create(thread_id=thread_id, role="user", content=user_message)
@@ -360,8 +362,6 @@ def ask1():
     except Exception as e:
         logger.error(f"Error in /askberater: {e}")
         return jsonify({"response": "Entschuldigung, ein Fehler ist aufgetreten."}), 500
-
-# Removed the @app.before_request middleware to handle session_id in the route itself
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)), debug=True)
