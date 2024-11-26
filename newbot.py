@@ -283,6 +283,8 @@ def ask1():
         logger.info(f"User message: {user_message}")
         user_message_lower = user_message.lower()
         session_id = request.cookies.get('session_id')
+
+        # Session handling (as per your existing code)
         if not session_id:
             session_id = str(uuid.uuid4())
             session_data[session_id] = {
@@ -298,8 +300,11 @@ def ask1():
                 'summary': None
             }
             logger.info(f"Session data initialized for existing session ID: {session_id}")
+
         thread_id = session_data[session_id]['thread'].id
         logger.info(f"Using thread ID: {thread_id}")
+
+        # Send the user's message to the assistant
         client.beta.threads.messages.create(thread_id=thread_id, role="user", content=user_message)
         run = client.beta.threads.runs.create_and_poll(
             thread_id=thread_id, assistant_id=assistant_id_berater)
@@ -307,43 +312,49 @@ def ask1():
             thread_id=thread_id, run_id=run.id))
         response_message = messages[0].content[0].text.value
         logger.info(f"Response from OpenAI: {response_message}")
-        # Store the summary for confirmation if present
-        if ("zusammenfassung" in response_message.lower() or 
-            "überblick" in response_message.lower() or 
-            "summary" in response_message.lower() or 
-            "zusammenfassen" in response_message.lower() or 
-            "zusammen" in response_message.lower()):
+
+        # Store the summary if the assistant provides one
+        if "ist die zusammenfassung so korrekt?" in response_message.lower():
             session_data[session_id]['summary'] = response_message
             logger.info(f"Summary stored for session {session_id}.")
-        # If user confirms the summary, process it
-        confirmation_phrases = [
-            "Absenden"
-        ]
-        if any(phrase in user_message_lower for phrase in confirmation_phrases):
-            logger.info("User confirmed the summary.")
+
+        # Check if the assistant's response is the confirmation message
+        confirmation_response = "Prima! Dann werde ich die Anfrage so an meine Kollegen weiterleiten."
+        if confirmation_response.lower() in response_message.lower():
+            logger.info("Assistant confirmed the summary.")
+
+            # Retrieve the stored summary
             confirmed_summary = session_data[session_id].get('summary')
             if confirmed_summary:
                 logger.info(f"Confirmed Summary: {confirmed_summary}")
+
+                # Extract user details from the summary
                 user_details = extract_details_from_summary(confirmed_summary)
                 if user_details:
                     session_data[session_id]['user_details'] = user_details
                     # Log session data for debugging
                     logger.info(f"Parsed User Details: {user_details}")
                     logger.info(f"Session Data: {session_data[session_id]}")
+
                     # Send data to Zoho CRM
                     send_to_zoho(user_details)
-                    # Inform the user
-                    response_message = (f"Danke {user_details.get('first_name', '')}! "
-                                        "Ihre Daten wurden erfolgreich übermittelt.")
+
+                    # Optionally, update the response_message to thank the user
+                    response_message += "\n\nIhre Daten wurden erfolgreich übermittelt."
                 else:
                     logger.error("Failed to parse user details from the summary.")
                     response_message = "Entschuldigung, es gab ein Problem beim Verarbeiten Ihrer Daten."
             else:
                 logger.error("No summary found to confirm.")
+                response_message = "Entschuldigung, ich konnte Ihre Zusammenfassung nicht finden."
+
         else:
-            logger.info("User did not confirm the summary.")
+            logger.info("Assistant did not provide the confirmation message.")
+
         # Log chat
         log_chat(thread_id, user_message, response_message)
+
+        # Prepare the response
         response = make_response(jsonify(
             {"response": response_message, "thread_id": thread_id}))
         response.set_cookie('session_id', session_id,
@@ -352,6 +363,7 @@ def ask1():
     except Exception as e:
         logger.error(f"Error in /askberater: {e}")
         return jsonify({"response": "Entschuldigung, ein Fehler ist aufgetreten."}), 500
+
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)), debug=True)
