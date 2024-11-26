@@ -284,7 +284,7 @@ def ask1():
         user_message_lower = user_message.lower()
         session_id = request.cookies.get('session_id')
 
-        # Session handling (as per your existing code)
+        # Session handling
         if not session_id:
             session_id = str(uuid.uuid4())
             session_data[session_id] = {
@@ -314,14 +314,25 @@ def ask1():
         logger.info(f"Response from OpenAI: {response_message}")
 
         # Store the summary if the assistant provides one
-        if "ist die zusammenfassung so korrekt?" in response_message.lower():
+        if ("zusammenfassung" in response_message.lower() or 
+            "überblick" in response_message.lower() or 
+            "summary" in response_message.lower() or 
+            "zusammenfassen" in response_message.lower() or 
+            "zusammen" in response_message.lower()):
             session_data[session_id]['summary'] = response_message
             logger.info(f"Summary stored for session {session_id}.")
 
         # Check if the assistant's response is the confirmation message
-        confirmation_response = "Prima! Dann werde ich die Anfrage so an meine Kollegen weiterleiten."
-        if confirmation_response.lower() in response_message.lower():
-            logger.info("Assistant confirmed the summary.")
+        confirmation_response_phrases = [
+            "prima! dann werde ich die anfrage so an meine kollegen weiterleiten.",
+            "prima! ich werde die anfrage so an meine kollegen weiterleiten.",
+            "ihre anfrage wird weitergeleitet.",
+            "prima! dann leite ich die anfrage an meine kollegen weiter.",
+            "super! ich werde die anfrage an meine kollegen weiterleiten."
+        ]
+
+        if any(phrase in response_message.lower() for phrase in confirmation_response_phrases):
+            logger.info("Assistant provided the confirmation message.")
 
             # Retrieve the stored summary
             confirmed_summary = session_data[session_id].get('summary')
@@ -363,6 +374,7 @@ def ask1():
     except Exception as e:
         logger.error(f"Error in /askberater: {e}")
         return jsonify({"response": "Entschuldigung, ein Fehler ist aufgetreten."}), 500
+
 
 
 if __name__ == "__main__":
