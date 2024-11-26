@@ -317,17 +317,7 @@ def ask1():
             logger.info(f"Summary stored for session {session_id}.")
         # If user confirms the summary, process it
         confirmation_phrases = [
-            "yes this is correct",
-            "yes",
-            "this is correct",
-            "ja",
-            "ja, das ist korrekt",
-            "korrekt",
-            "das ist korrekt",
-            "ja, das stimmt",
-            "stimmt",
-            "ja, genau",
-            "genau"
+            "Absenden"
         ]
         if any(phrase in user_message_lower for phrase in confirmation_phrases):
             logger.info("User confirmed the summary.")
