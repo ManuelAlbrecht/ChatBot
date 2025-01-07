@@ -133,7 +133,10 @@ def extract_details_from_summary(summary):
             else:
                 logger.warning(f"Ignored line without colon: {line}")
 
-        required_fields = ['first_name', 'last_name', 'email', 'phone', 'zip_code', 'quantity', 'description', 'geplanter_start']
+        required_fields = [
+            'first_name', 'last_name', 'email', 'phone',
+            'zip_code', 'quantity', 'description', 'geplanter_start'
+        ]
         if all(field in details for field in required_fields):
             logger.info(f"Parsed Details: {details}")
             return details
@@ -264,15 +267,35 @@ def log_chat(thread_id, user_message, assistant_response, ip_address=None, regio
 def ask1():
     try:
         logger.info("Received request at /askberater")
-        user_message = request.json.get("message", "")
-        ip_address = request.json.get("ip_address", "")
-        region = request.json.get("region", "")
-        city = request.json.get("city", "")
+
+        # NEW: Load request data safely
+        data = request.json or {}
+        user_message = data.get("message", "")
+        thread_id_from_body = data.get("threadId")  # Fallback thread ID from front-end
+        ip_address = data.get("ip_address", "")
+        region = data.get("region", "")
+        city = data.get("city", "")
 
         logger.info(f"User message: {user_message}")
         user_message_lower = user_message.lower()
+
+        # Check for our session cookie first
         session_id = request.cookies.get('session_id')
 
+        # Fallback logic: if no session_id in cookie, see if front-end gave us a threadId
+        if not session_id and thread_id_from_body:
+            # Look up which session_id has that thread ID
+            matching_session_id = None
+            for possible_session_id, session_info in session_data.items():
+                if session_info['thread'].id == thread_id_from_body:
+                    matching_session_id = possible_session_id
+                    break
+
+            if matching_session_id:
+                logger.info("Found matching session based on front-end threadId.")
+                session_id = matching_session_id
+
+        # If still no session_id, create a brand new session
         if not session_id:
             session_id = str(uuid.uuid4())
             session_data[session_id] = {
@@ -282,6 +305,7 @@ def ask1():
             }
             logger.info(f"New session created with ID: {session_id}")
         elif session_id not in session_data:
+            # If the cookie session_id does not exist in our session_data dictionary
             session_data[session_id] = {
                 'thread': client.beta.threads.create(),
                 'user_details': {},
@@ -296,9 +320,11 @@ def ask1():
         client.beta.threads.messages.create(thread_id=thread_id, role="user", content=user_message)
         run = client.beta.threads.runs.create_and_poll(thread_id=thread_id, assistant_id=assistant_id_berater)
         messages = list(client.beta.threads.messages.list(thread_id=thread_id, run_id=run.id))
+
         response_message = messages[0].content[0].text.value
         logger.info(f"Response from OpenAI: {response_message}")
 
+        # Check if it's a summary
         if ("zusammenfassung" in response_message.lower() or
             "überblick" in response_message.lower() or
             "summary" in response_message.lower() or
@@ -337,6 +363,7 @@ def ask1():
         # Log chat with IP and location
         log_chat(thread_id, user_message, response_message, ip_address, region, city)
 
+        # Return the JSON including the thread_id so front-end can store it if cookies get blocked
         response = make_response(jsonify({"response": response_message, "thread_id": thread_id}))
         response.set_cookie('session_id', session_id, httponly=True, samesite='None', secure=True)
         return response
