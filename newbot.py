@@ -9,6 +9,7 @@ import requests
 import time
 import logging
 from datetime import datetime
+import random  # <-- for random choice
 
 load_dotenv()
 
@@ -71,6 +72,9 @@ else:
 
 
 def refresh_access_token():
+    """
+    Refreshes the Zoho CRM access token using the provided refresh token.
+    """
     global access_token, token_last_refresh_time, token_expires_in
     url = "https://accounts.zoho.eu/oauth/v2/token"
     payload = {
@@ -92,6 +96,9 @@ def refresh_access_token():
 
 
 def ensure_valid_access_token():
+    """
+    Ensures the Zoho CRM access token is still valid; if not, refresh it.
+    """
     global token_last_refresh_time, token_expires_in
     current_time = time.time()
     if current_time - token_last_refresh_time >= token_expires_in:
@@ -99,6 +106,10 @@ def ensure_valid_access_token():
 
 
 def extract_details_from_summary(summary):
+    """
+    Takes an assistant-generated summary and extracts user details (like name, email, phone, etc.).
+    Returns a dictionary of details if successful, else None.
+    """
     try:
         logger.info(f"Extracting details from summary:\n{summary}")
         details = {}
@@ -150,6 +161,9 @@ def extract_details_from_summary(summary):
 
 
 def send_to_zoho(user_details):
+    """
+    Sends the extracted user details to Zoho CRM as a new Deal.
+    """
     try:
         ensure_valid_access_token()
         zoho_url = "https://www.zohoapis.eu/crm/v3/Deals"
@@ -168,12 +182,13 @@ def send_to_zoho(user_details):
         subject = user_details.get('subject', '')
         geplannter_start = user_details.get('geplanter_start', '')
 
+        # Convert date format if provided
         if geplannter_start:
             try:
-                date_obj = datetime.strptime(geplannter_start, '%d.%m.%Y')
+                date_obj = datetime.strptime(geplanter_start, '%d.%m.%Y')
                 geplannter_start_formatted = date_obj.strftime('%Y-%m-%d')
             except ValueError:
-                logger.error(f"Invalid date format for Geplanter Start: {geplannter_start}")
+                logger.error(f"Invalid date format for Geplanter Start: {geplanter_start}")
                 geplannter_start_formatted = ''
         else:
             geplannter_start_formatted = ''
@@ -207,6 +222,7 @@ def send_to_zoho(user_details):
         logger.info(f"Zoho CRM Response Status Code: {response.status_code}")
         logger.info(f"Zoho CRM Response Text: {response.text}")
 
+        # If unauthorized, try refreshing token and re-sending
         if response.status_code == 401:
             logger.warning("Unauthorized. Refreshing access token and retrying...")
             refresh_access_token()
@@ -227,6 +243,9 @@ def send_to_zoho(user_details):
 
 
 def get_db_connection():
+    """
+    Connects to the database using credentials from environment variables.
+    """
     try:
         connection = pymysql.connect(
             host=os.getenv('DB_HOST'),
@@ -244,6 +263,9 @@ def get_db_connection():
 
 
 def log_chat(thread_id, user_message, assistant_response, ip_address=None, region=None, city=None):
+    """
+    Logs the conversation (user_message and assistant_response) into the database, if connected.
+    """
     connection = get_db_connection()
     if connection is None:
         logger.error("Failed to log chat: No database connection.")
@@ -265,10 +287,14 @@ def log_chat(thread_id, user_message, assistant_response, ip_address=None, regio
 
 @app.route("/askberater", methods=["POST"])
 def ask1():
+    """
+    Main endpoint for handling user queries to the chatbot/assistant.
+    Checks if the query matches a "special question" that requires a 3-second delay
+    and a random response. Otherwise, it falls back to the normal OpenAI logic.
+    """
     try:
         logger.info("Received request at /askberater")
 
-        # NEW: Load request data safely
         data = request.json or {}
         user_message = data.get("message", "")
         thread_id_from_body = data.get("threadId")  # Fallback thread ID from front-end
@@ -279,10 +305,53 @@ def ask1():
         logger.info(f"User message: {user_message}")
         user_message_lower = user_message.lower()
 
+        # ----------------------------------------------------------------------
+        # 1) Define your special Q&A with multiple possible answers here.
+        #    Edit these to match your specific questions & responses.
+        SPECIAL_RESPONSES = {
+            "hello": [
+                "Hello! How can I help you today?",
+                "Hi there! Nice to meet you!",
+                "Hey! What’s on your mind?"
+            ],
+            "tell me a joke": [
+                "Why did the developer go broke? Because they used up all their cache!",
+                "What do computers eat for a snack? Microchips!",
+                "Why was the cell phone wearing glasses? Because it lost its contacts!"
+            ],
+            "what time do you open?": [
+                "We open at 9 AM sharp!",
+                "Doors open at 9:00 every morning!",
+                "We start bright and early at 9 AM!"
+            ]
+        }
+        # ----------------------------------------------------------------------
+
+        # 2) Check if user_message is in SPECIAL_RESPONSES
+        if user_message_lower in SPECIAL_RESPONSES:
+            # Randomly pick one from the list
+            random_response = random.choice(SPECIAL_RESPONSES[user_message_lower])
+            # Introduce a 3-second delay
+            time.sleep(3)
+            response_message = random_response
+            logger.info("Returning a special delayed (random) response.")
+
+            # For the special response case, skip the normal AI logic.
+            # We still want to log it though, so let's log it with a placeholder thread_id
+            thread_id = "special-no-openai"
+            log_chat(thread_id, user_message, response_message, ip_address, region, city)
+
+            # Return this response right away
+            response = make_response(jsonify({"response": response_message, "thread_id": thread_id}))
+            return response
+
+        # ----------------------------------------------------------------------
+        # If not a special question, proceed with normal OpenAI logic:
+
         # Check for our session cookie first
         session_id = request.cookies.get('session_id')
 
-        # Fallback logic: if no session_id in cookie, see if front-end gave us a threadId
+        # If no session_id in cookie, check if front-end gave us a threadId
         if not session_id and thread_id_from_body:
             # Look up which session_id has that thread ID
             matching_session_id = None
@@ -313,6 +382,7 @@ def ask1():
             }
             logger.info(f"Session data initialized for existing session ID: {session_id}")
 
+        # Now we have a valid session_id
         thread_id = session_data[session_id]['thread'].id
         logger.info(f"Using thread ID: {thread_id}")
 
@@ -367,10 +437,12 @@ def ask1():
         response = make_response(jsonify({"response": response_message, "thread_id": thread_id}))
         response.set_cookie('session_id', session_id, httponly=True, samesite='None', secure=True)
         return response
+
     except Exception as e:
         logger.error(f"Error in /askberater: {e}")
         return jsonify({"response": "Entschuldigung, ein Fehler ist aufgetreten."}), 500
 
 
 if __name__ == "__main__":
+    # Run the Flask app
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)), debug=True)
