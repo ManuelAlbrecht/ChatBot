@@ -268,11 +268,12 @@ def ask1():
         ip_address = request.json.get("ip_address", "")
         region = request.json.get("region", "")
         city = request.json.get("city", "")
-        session_id = request.json.get("session_id")
 
         logger.info(f"User message: {user_message}")
+        user_message_lower = user_message.lower()
+        session_id = request.cookies.get('session_id')
 
-        if not session_id or session_id not in session_data:
+        if not session_id:
             session_id = str(uuid.uuid4())
             session_data[session_id] = {
                 'thread': client.beta.threads.create(),
@@ -280,6 +281,13 @@ def ask1():
                 'summary': None
             }
             logger.info(f"New session created with ID: {session_id}")
+        elif session_id not in session_data:
+            session_data[session_id] = {
+                'thread': client.beta.threads.create(),
+                'user_details': {},
+                'summary': None
+            }
+            logger.info(f"Session data initialized for existing session ID: {session_id}")
 
         thread_id = session_data[session_id]['thread'].id
         logger.info(f"Using thread ID: {thread_id}")
@@ -329,7 +337,7 @@ def ask1():
         # Log chat with IP and location
         log_chat(thread_id, user_message, response_message, ip_address, region, city)
 
-        response = make_response(jsonify({"response": response_message, "thread_id": thread_id, "session_id": session_id}))
+        response = make_response(jsonify({"response": response_message, "thread_id": thread_id}))
         response.set_cookie('session_id', session_id, httponly=True, samesite='None', secure=True)
         return response
     except Exception as e:
