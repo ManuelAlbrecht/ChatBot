@@ -337,7 +337,7 @@ def ask1():
             # Randomly pick one from the list
             random_response = random.choice(SPECIAL_RESPONSES[user_message_lower])
             # Introduce a 3-second delay
-            time.sleep(3)
+            time.sleep(2)
             response_message = random_response
             logger.info("Returning a special delayed (random) response.")
 
