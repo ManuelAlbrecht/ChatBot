@@ -370,36 +370,31 @@ def ask1():
         # ----------------------------------------------------------------------
         # STEP C: If user's question is special, we respond from the special list
         if user_message_lower in SPECIAL_RESPONSES:
-            # OPTIONAL: Store the user message in the OpenAI thread if you want context
-            client.beta.threads.messages.create(
-                thread_id=thread_id,
-                role="user",
-                content=user_message
-            )
+    # Insert user’s message to OpenAI thread if you want context
+    client.beta.threads.messages.create(
+        thread_id=thread_id,
+        role="user",
+        content=user_message
+    )
 
-            # Pick a random response
-            random_response = random.choice(SPECIAL_RESPONSES[user_message_lower])
+    random_response = random.choice(SPECIAL_RESPONSES[user_message_lower])
+    time.sleep(2)  # Delay
+    response_message = random_response
+    logger.info("Returning a special delayed response.")
 
-            # Delay
-            time.sleep(2)  # or 3, whichever you want
-            response_message = random_response
-            logger.info("Returning a special delayed (random) response.")
+    # Insert special response into OpenAI thread if you want context
+    client.beta.threads.messages.create(
+        thread_id=thread_id,
+        role="assistant",
+        content=response_message
+    )
 
-            # OPTIONAL: Store the assistant's special response in the thread
-            client.beta.threads.messages.create(
-                thread_id=thread_id,
-                role="assistant",
-                content=response_message
-            )
+    # INSTEAD OF "special-no-openai", use the real thread_id here:
+    log_chat(thread_id, user_message, response_message, ip_address, region, city)
 
-            # Log to DB (using a placeholder thread_id or the real thread_id)
-            log_chat("special-no-openai", user_message, response_message, ip_address, region, city)
-
-            # Return this special response AND the same thread_id
-            response = make_response(jsonify({"response": response_message, "thread_id": thread_id}))
-            response.set_cookie("session_id", session_id, httponly=True, samesite="None", secure=True)
-            return response
-
+    response = make_response(jsonify({"response": response_message, "thread_id": thread_id}))
+    response.set_cookie("session_id", session_id, httponly=True, samesite="None", secure=True)
+    return response
         # ----------------------------------------------------------------------
         # STEP D: Otherwise, go through normal OpenAI flow
         # 1) Insert user's message into thread
