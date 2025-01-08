@@ -9,7 +9,7 @@ import requests
 import time
 import logging
 from datetime import datetime
-import random  # <-- for random choice
+import random  # for random choice
 
 load_dotenv()
 
@@ -28,9 +28,9 @@ else:
     logger.error("OPENAI_API_KEY is NOT set")
 
 if assistant_id_berater:
-    logger.info("ASSISTANT_ID_berater is set")
+    logger.info("OPENAI_ASSISTANT_ID_berater is set")
 else:
-    logger.error("ASSISTANT_ID_berater is NOT set")
+    logger.error("OPENAI_ASSISTANT_ID_berater is NOT set")
 
 client = OpenAI(api_key=key)
 app = Flask(__name__)
@@ -289,8 +289,9 @@ def log_chat(thread_id, user_message, assistant_response, ip_address=None, regio
 def ask1():
     """
     Main endpoint for handling user queries to the chatbot/assistant.
-    Checks if the query matches a "special question" that requires a 3-second delay
+    Checks if the query matches a "special question" that requires a delay
     and a random response. Otherwise, it falls back to the normal OpenAI logic.
+    Either way, we give the user the same threadId.
     """
     try:
         logger.info("Received request at /askberater")
@@ -303,26 +304,61 @@ def ask1():
         city = data.get("city", "")
 
         logger.info(f"User message: {user_message}")
-        user_message_lower = user_message.lower()
+        user_message_lower = user_message.lower().strip()
 
         # ----------------------------------------------------------------------
-        # 1) Define your special Q&A with multiple possible answers here.
-        #    Edit these to match your specific questions & responses.
+        # STEP A: Always retrieve or create the OpenAI thread (and session) FIRST
+        session_id = request.cookies.get("session_id")
+
+        # If no session_id, see if front-end gave us a threadId
+        if not session_id and thread_id_from_body:
+            matching_session_id = None
+            for possible_session_id, session_info in session_data.items():
+                if session_info["thread"].id == thread_id_from_body:
+                    matching_session_id = possible_session_id
+                    break
+            if matching_session_id:
+                logger.info("Found matching session based on front-end threadId.")
+                session_id = matching_session_id
+
+        # If still no session_id, create a brand-new one
+        if not session_id:
+            session_id = str(uuid.uuid4())
+            session_data[session_id] = {
+                "thread": client.beta.threads.create(),
+                "user_details": {},
+                "summary": None
+            }
+            logger.info(f"New session created with ID: {session_id}")
+        elif session_id not in session_data:
+            session_data[session_id] = {
+                "thread": client.beta.threads.create(),
+                "user_details": {},
+                "summary": None
+            }
+            logger.info(f"Session data initialized for existing session ID: {session_id}")
+
+        # We now have a valid sessionId, so get the threadId from it
+        thread_id = session_data[session_id]["thread"].id
+        logger.info(f"Using thread ID: {thread_id}")
+
+        # ----------------------------------------------------------------------
+        # STEP B: Define "special" questions + responses
         SPECIAL_RESPONSES = {
             "ich benötige ein baugrundgutachten": [
-                "Hallo! Gerne helfe ich Ihnen dabei. Wissen Sie, wie viele Rammkernsondierungen Sie benötigen oder haben Sie genaue Vorgaben für das Baugrundgutachten, oder benötigen Sie Beratung?",
+                "Hallo! Gerne helfe ich Ihnen dabei. Wissen Sie, wie viele Rammkernsondierungen Sie benötigen?",
                 "Guten Tag! Benötigen Sie allgemeine Infos zum Baugrundgutachten oder möchten Sie direkt einen Preis?",
                 "Guten Tag! Möchten Sie einen Preis wissen oder haben Sie andere Fragen?"
             ],
             "ich benötige eine deklarationsanalyse": [
-                "Super! Zwei Fragen hierzu: 1. Wissen Sie, nach welcher Verordnung die Deklarationsanalyse durchgeführt werden soll? 2. Wie viele Laboranalysen benötigen Sie? Wenn nicht, können wir das zusammen klären.",
-                "Kein Problem! Wissen Sie, nach welcher Verordnung die Deklarationsanalyse durchgeführt werden soll und wie viele Laboranalysen Sie benötigen? Wenn nicht, können wir das zusammen klären.",
-                "Okay! Und wissen Sie schon was für eine Deklarationsanalyse Sie benötigen, also nach welcher Verordnung oder sollen wir das zusammen klären?"
+                "Super! Zwei Fragen hierzu: 1. Wissen Sie, nach welcher Verordnung die Deklarationsanalyse durchgeführt werden soll? 2. Wie viele Laboranalysen benötigen Sie?",
+                "Kein Problem! Wissen Sie, nach welcher Verordnung die Deklarationsanalyse durchgeführt werden soll und wie viele Laboranalysen?",
+                "Okay! Und wissen Sie schon, was für eine Deklarationsanalyse Sie benötigen, also nach welcher Verordnung?"
             ],
             "ich möchte boden / bauschutt entsorgen": [
                 "Gerne! Haben Sie schon eine Deklarationsanalyse für das Material vorliegen?",
-                "Okay! Haben Sie bereits eine Deklarationsanalyse für das Material? Falls ja, können Sie hier auf der Webseite eine Anfrage stellen und die Deklarationsanalyse samt Probenahmeprotokoll direkt hochladen, damit wir Ihnen ein Preis nennen können.",
-                "Kein Problem! Haben Sie bereits eine Deklarationsanalyse für das Material vorliegen? Falls ja, können Sie diese hochladen oder die relevanten Informationen teilen. Falls keine Analyse vorliegt, könnte ich Ihnen die Kosten für eine Deklarationsanalyse berechnen. Wie möchten Sie fortfahren?"
+                "Okay! Haben Sie bereits eine Deklarationsanalyse für das Material? Falls ja, können Sie diese hochladen, damit wir Ihnen einen Preis nennen können.",
+                "Kein Problem! Haben Sie bereits eine Deklarationsanalyse für das Material? Falls nicht, kann ich Ihnen dazu die Kosten erklären."
             ],
             "ich benötige boden / recyclingmaterial": [
                 "Hallo! Wie viel Material benötigen Sie denn?",
@@ -330,76 +366,53 @@ def ask1():
                 "Gerne! Wie viel und was für Material benötigen Sie denn?"
             ]
         }
-        # ----------------------------------------------------------------------
 
-        # 2) Check if user_message is in SPECIAL_RESPONSES
+        # ----------------------------------------------------------------------
+        # STEP C: If user's question is special, we respond from the special list
         if user_message_lower in SPECIAL_RESPONSES:
-            # Randomly pick one from the list
+            # OPTIONAL: Store the user message in the OpenAI thread if you want context
+            client.beta.threads.messages.create(
+                thread_id=thread_id,
+                role="user",
+                content=user_message
+            )
+
+            # Pick a random response
             random_response = random.choice(SPECIAL_RESPONSES[user_message_lower])
-            # Introduce a 3-second delay
-            time.sleep(2)
+
+            # Delay
+            time.sleep(2)  # or 3, whichever you want
             response_message = random_response
             logger.info("Returning a special delayed (random) response.")
 
-            # For the special response case, skip the normal AI logic.
-            # We still want to log it though, so let's log it with a placeholder thread_id
-            thread_id = "special-no-openai"
-            log_chat(thread_id, user_message, response_message, ip_address, region, city)
+            # OPTIONAL: Store the assistant's special response in the thread
+            client.beta.threads.messages.create(
+                thread_id=thread_id,
+                role="assistant",
+                content=response_message
+            )
 
-            # Return this response right away
+            # Log to DB (using a placeholder thread_id or the real thread_id)
+            log_chat("special-no-openai", user_message, response_message, ip_address, region, city)
+
+            # Return this special response AND the same thread_id
             response = make_response(jsonify({"response": response_message, "thread_id": thread_id}))
+            response.set_cookie("session_id", session_id, httponly=True, samesite="None", secure=True)
             return response
 
         # ----------------------------------------------------------------------
-        # If not a special question, proceed with normal OpenAI logic:
-
-        # Check for our session cookie first
-        session_id = request.cookies.get('session_id')
-
-        # If no session_id in cookie, check if front-end gave us a threadId
-        if not session_id and thread_id_from_body:
-            # Look up which session_id has that thread ID
-            matching_session_id = None
-            for possible_session_id, session_info in session_data.items():
-                if session_info['thread'].id == thread_id_from_body:
-                    matching_session_id = possible_session_id
-                    break
-
-            if matching_session_id:
-                logger.info("Found matching session based on front-end threadId.")
-                session_id = matching_session_id
-
-        # If still no session_id, create a brand new session
-        if not session_id:
-            session_id = str(uuid.uuid4())
-            session_data[session_id] = {
-                'thread': client.beta.threads.create(),
-                'user_details': {},
-                'summary': None
-            }
-            logger.info(f"New session created with ID: {session_id}")
-        elif session_id not in session_data:
-            # If the cookie session_id does not exist in our session_data dictionary
-            session_data[session_id] = {
-                'thread': client.beta.threads.create(),
-                'user_details': {},
-                'summary': None
-            }
-            logger.info(f"Session data initialized for existing session ID: {session_id}")
-
-        # Now we have a valid session_id
-        thread_id = session_data[session_id]['thread'].id
-        logger.info(f"Using thread ID: {thread_id}")
-
-        # Send the user's message to the assistant
+        # STEP D: Otherwise, go through normal OpenAI flow
+        # 1) Insert user's message into thread
         client.beta.threads.messages.create(thread_id=thread_id, role="user", content=user_message)
+
+        # 2) Call OpenAI
         run = client.beta.threads.runs.create_and_poll(thread_id=thread_id, assistant_id=assistant_id_berater)
         messages = list(client.beta.threads.messages.list(thread_id=thread_id, run_id=run.id))
 
         response_message = messages[0].content[0].text.value
         logger.info(f"Response from OpenAI: {response_message}")
 
-        # Check if it's a summary
+        # 3) Check if it's a summary or triggers Zoho, etc.
         if ("zusammenfassung" in response_message.lower() or
             "überblick" in response_message.lower() or
             "summary" in response_message.lower() or
@@ -435,12 +448,11 @@ def ask1():
         else:
             logger.info("Assistant did not provide the confirmation message.")
 
-        # Log chat with IP and location
+        # 4) Log and return
         log_chat(thread_id, user_message, response_message, ip_address, region, city)
 
-        # Return the JSON including the thread_id so front-end can store it if cookies get blocked
         response = make_response(jsonify({"response": response_message, "thread_id": thread_id}))
-        response.set_cookie('session_id', session_id, httponly=True, samesite='None', secure=True)
+        response.set_cookie("session_id", session_id, httponly=True, samesite='None', secure=True)
         return response
 
     except Exception as e:
