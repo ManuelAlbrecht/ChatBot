@@ -309,20 +309,25 @@ def ask1():
         # 1) Define your special Q&A with multiple possible answers here.
         #    Edit these to match your specific questions & responses.
         SPECIAL_RESPONSES = {
-            "hello": [
-                "Hello! How can I help you today?",
-                "Hi there! Nice to meet you!",
-                "Hey! What’s on your mind?"
+            "Ich benötige ein Baugrundgutachten": [
+                "Hallo! Gerne helfe ich Ihnen dabei. Wissen Sie, wie viele Rammkernsondierungen Sie benötigen oder haben Sie genaue Vorgaben für das Baugrundgutachten, oder benötigen Sie Beratung?",
+                "Guten Tag! Benötigen Sie allgemeine Infos zum Baugrundgutachten oder möchten Sie direkt einen Preis?",
+                "Guten Tag! Möchten Sie einen Preis wissen oder haben Sie andere Fragen?"
             ],
-            "tell me a joke": [
-                "Why did the developer go broke? Because they used up all their cache!",
-                "What do computers eat for a snack? Microchips!",
-                "Why was the cell phone wearing glasses? Because it lost its contacts!"
+            "Ich benötige eine Deklarationsanalyse": [
+                "Super! Zwei Fragen hierzu: 1. Wissen Sie, nach welcher Verordnung die Deklarationsanalyse durchgeführt werden soll? 2. Wie viele Laboranalysen benötigen Sie? Wenn nicht, können wir das zusammen klären.",
+                "Kein Problem! Wissen Sie, nach welcher Verordnung die Deklarationsanalyse durchgeführt werden soll und wie viele Laboranalysen Sie benötigen? Wenn nicht, können wir das zusammen klären.",
+                "Okay! Und wissen Sie schon was für eine Deklarationsanalyse Sie benötigen, also nach welcher Verordnung oder sollen wir das zusammen klären?"
             ],
-            "what time do you open?": [
-                "We open at 9 AM sharp!",
-                "Doors open at 9:00 every morning!",
-                "We start bright and early at 9 AM!"
+            "Ich möchte Boden / Bauschutt entsorgen": [
+                "Gerne! Haben Sie schon eine Deklarationsanalyse für das Material vorliegen?",
+                "Okay! Haben Sie bereits eine Deklarationsanalyse für das Material? Falls ja, können Sie hier auf der Webseite eine Anfrage stellen und die Deklarationsanalyse samt Probenahmeprotokoll direkt hochladen, damit wir Ihnen ein Preis nennen können.",
+                "Kein Problem! Haben Sie bereits eine Deklarationsanalyse für das Material vorliegen? Falls ja, können Sie diese hochladen oder die relevanten Informationen teilen. Falls keine Analyse vorliegt, könnte ich Ihnen die Kosten für eine Deklarationsanalyse berechnen. Wie möchten Sie fortfahren?"
+            ],
+            "Ich benötige Boden / Recyclingmaterial": [
+                "Hallo! Wie viel Material benötigen Sie denn?",
+                "Okay! Brauchen Sie Boden oder Recyclingmaterial?",
+                "Gerne! Wie viel und was für Material benötigen Sie denn?"
             ]
         }
         # ----------------------------------------------------------------------
