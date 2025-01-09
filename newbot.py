@@ -362,7 +362,7 @@ def ask1():
             # Pick a random response
             random_response = random.choice(SPECIAL_RESPONSES[user_message_lower])
             # Delay
-            time.sleep(2)  # keep the functionality as is
+            time.sleep(1)  # keep the functionality as is
 
             response_message = random_response
 
