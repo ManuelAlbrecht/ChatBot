@@ -180,18 +180,18 @@ def send_to_zoho(user_details):
         email = user_details.get('email', '')
         quantity = user_details.get('quantity', '')
         subject = user_details.get('subject', '')
-        geplannter_start = user_details.get('geplanter_start', '')
+        geplanter_start = user_details.get('geplanter_start', '')
 
         # Convert date format if provided
-        if geplannter_start:
+        if geplanter_start:
             try:
                 date_obj = datetime.strptime(geplanter_start, '%d.%m.%Y')
-                geplannter_start_formatted = date_obj.strftime('%Y-%m-%d')
+                geplanter_start_formatted = date_obj.strftime('%Y-%m-%d')
             except ValueError:
                 logger.error(f"Invalid date format for Geplanter Start: {geplanter_start}")
-                geplannter_start_formatted = ''
+                geplanter_start_formatted = ''
         else:
-            geplannter_start_formatted = ''
+            geplanter_start_formatted = ''
 
         deal_name = f"Deal with {first_name} {last_name}"
         pipeline_value = "Standard"
@@ -212,7 +212,7 @@ def send_to_zoho(user_details):
                     "Pipeline": pipeline_value,
                     "Stage": stage_value,
                     "Lead_Source": "Chatbot",
-                    "Geplanter_Start": geplannter_start_formatted
+                    "Geplanter_Start": geplanter_start_formatted
                 }
             ]
         }
