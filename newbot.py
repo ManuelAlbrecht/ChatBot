@@ -9,8 +9,7 @@ import requests
 import time
 import logging
 from datetime import datetime
-import random
-
+import random  # for random choice
 
 load_dotenv()
 
@@ -18,14 +17,30 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+key = os.getenv("OPENAI_API_KEY")
+assistant_id_berater = os.getenv("ASSISTANT_ID_berater")
+
+# Log environment variables
+logger.info("Checking environment variables...")
+if key:
+    logger.info("OPENAI_API_KEY is set")
+else:
+    logger.error("OPENAI_API_KEY is NOT set")
+
+if assistant_id_berater:
+    logger.info("OPENAI_ASSISTANT_ID_berater is set")
+else:
+    logger.error("OPENAI_ASSISTANT_ID_berater is NOT set")
+
+client = OpenAI(api_key=key)
 app = Flask(__name__)
 # Enable CORS with credentials
 CORS(app, supports_credentials=True, origins=["https://probenahmeprotokoll.de", "https://erdbaron.com"])
 
-# --- Global Variables and Setup ---
-key = os.getenv("OPENAI_API_KEY")
-assistant_id_berater = os.getenv("ASSISTANT_ID_berater")
+# Dictionary to store session data (thread IDs and user details)
+session_data = {}
 
+# Variables to manage tokens for Zoho API
 access_token = os.getenv("ZOHO_ACCESS_TOKEN")
 refresh_token = os.getenv("ZOHO_REFRESH_TOKEN")
 client_id = os.getenv("ZOHO_CLIENT_ID")
@@ -33,72 +48,27 @@ client_secret = os.getenv("ZOHO_CLIENT_SECRET")
 token_expires_in = 3600  # Time in seconds
 token_last_refresh_time = time.time()
 
-client = OpenAI(api_key=key)
+# Log Zoho credentials
+logger.info("Checking Zoho API credentials...")
+if access_token:
+    logger.info("ZOHO_ACCESS_TOKEN is set")
+else:
+    logger.error("ZOHO_ACCESS_TOKEN is NOT set")
 
-# In-memory session data
-session_data = {}
+if refresh_token:
+    logger.info("ZOHO_REFRESH_TOKEN is set")
+else:
+    logger.error("ZOHO_REFRESH_TOKEN is NOT set")
 
-# Optional: Use requests.Session to reuse TCP connections for Zoho
-zoho_session = requests.Session()
+if client_id:
+    logger.info("ZOHO_CLIENT_ID is set")
+else:
+    logger.error("ZOHO_CLIENT_ID is NOT set")
 
-
-
-def get_db_connection():
-    """
-    Connects to the database using credentials from environment variables.
-    If you want to use pooling, comment out below code and uncomment pool usage.
-    """
-    try:
-        connection = pymysql.connect(
-            host=os.getenv('DB_HOST'),
-            user=os.getenv('DB_USER'),
-            password=os.getenv('DB_PASS'),
-            database=os.getenv('DB_NAME'),
-            charset='utf8mb4',
-            cursorclass=pymysql.cursors.DictCursor
-        )
-        return connection
-    except Exception as e:
-        logger.error(f"Error connecting to the database: {e}")
-        return None
-
-
-def log_startup_info():
-    """
-    Check environment variables once on startup, log them if needed.
-    """
-    # Log environment variables
-    logger.info("Checking environment variables on startup...")
-    if key:
-        logger.info("OPENAI_API_KEY is set")
-    else:
-        logger.error("OPENAI_API_KEY is NOT set")
-
-    if assistant_id_berater:
-        logger.info("OPENAI_ASSISTANT_ID_berater is set")
-    else:
-        logger.error("OPENAI_ASSISTANT_ID_berater is NOT set")
-
-    # Log Zoho credentials
-    if access_token:
-        logger.info("ZOHO_ACCESS_TOKEN is set")
-    else:
-        logger.error("ZOHO_ACCESS_TOKEN is NOT set")
-
-    if refresh_token:
-        logger.info("ZOHO_REFRESH_TOKEN is set")
-    else:
-        logger.error("ZOHO_REFRESH_TOKEN is NOT set")
-
-    if client_id:
-        logger.info("ZOHO_CLIENT_ID is set")
-    else:
-        logger.error("ZOHO_CLIENT_ID is NOT set")
-
-    if client_secret:
-        logger.info("ZOHO_CLIENT_SECRET is set")
-    else:
-        logger.error("ZOHO_CLIENT_SECRET is NOT set")
+if client_secret:
+    logger.info("ZOHO_CLIENT_SECRET is set")
+else:
+    logger.error("ZOHO_CLIENT_SECRET is NOT set")
 
 
 def refresh_access_token():
@@ -113,8 +83,7 @@ def refresh_access_token():
         'client_secret': client_secret,
         'grant_type': 'refresh_token'
     }
-    # Use zoho_session to keep connections alive
-    response = zoho_session.post(url, params=payload)
+    response = requests.post(url, params=payload)
     if response.status_code == 200:
         response_data = response.json()
         access_token = response_data['access_token']
@@ -142,6 +111,7 @@ def extract_details_from_summary(summary):
     Returns a dictionary of details if successful, else None.
     """
     try:
+        logger.info(f"Extracting details from summary:\n{summary}")
         details = {}
         field_mapping = {
             'Anrede': 'salutation',
@@ -168,17 +138,22 @@ def extract_details_from_summary(summary):
                 key = field_mapping.get(field_name)
                 if key:
                     details[key] = value
-            # If there's no colon, ignore the line silently.
+                    logger.info(f"Extracted {key}: {value}")
+                else:
+                    logger.warning(f"Ignored unrecognized field: {field_name}")
+            else:
+                logger.warning(f"Ignored line without colon: {line}")
 
         required_fields = [
             'first_name', 'last_name', 'email', 'phone',
             'zip_code', 'quantity', 'description', 'geplanter_start'
         ]
         if all(field in details for field in required_fields):
+            logger.info(f"Parsed Details: {details}")
             return details
         else:
             missing_fields = [field for field in required_fields if field not in details]
-            logger.error(f"Missing fields in summary: {missing_fields}")
+            logger.error(f"Missing fields: {missing_fields}")
             return None
     except Exception as e:
         logger.error(f"Error extracting details from summary: {e}")
@@ -191,7 +166,6 @@ def send_to_zoho(user_details):
     """
     try:
         ensure_valid_access_token()
-
         zoho_url = "https://www.zohoapis.eu/crm/v3/Deals"
         headers = {
             'Authorization': f'Zoho-oauthtoken {access_token}',
@@ -243,21 +217,49 @@ def send_to_zoho(user_details):
             ]
         }
 
-        response = zoho_session.post(zoho_url, json=data, headers=headers)
+        logger.info(f"Data being sent to Zoho CRM: {data}")
+        response = requests.post(zoho_url, json=data, headers=headers)
+        logger.info(f"Zoho CRM Response Status Code: {response.status_code}")
+        logger.info(f"Zoho CRM Response Text: {response.text}")
+
+        # If unauthorized, try refreshing token and re-sending
         if response.status_code == 401:
             logger.warning("Unauthorized. Refreshing access token and retrying...")
             refresh_access_token()
             headers['Authorization'] = f'Zoho-oauthtoken {access_token}'
-            response = zoho_session.post(zoho_url, json=data, headers=headers)
+            response = requests.post(zoho_url, json=data, headers=headers)
+            logger.info(f"Retry Zoho CRM Response Status Code: {response.status_code}")
+            logger.info(f"Retry Zoho CRM Response Text: {response.text}")
 
         if response.status_code in [200, 201]:
             logger.info("Data successfully sent to Zoho CRM.")
+            logger.info(f"Response: {response.json()}")
         else:
             logger.error(f"Failed to send data to Zoho CRM. Status: {response.status_code}")
             logger.error(f"Response: {response.text}")
 
     except Exception as e:
         logger.error(f"Error while sending to Zoho: {e}")
+
+
+def get_db_connection():
+    """
+    Connects to the database using credentials from environment variables.
+    """
+    try:
+        connection = pymysql.connect(
+            host=os.getenv('DB_HOST'),
+            user=os.getenv('DB_USER'),
+            password=os.getenv('DB_PASS'),
+            database=os.getenv('DB_NAME'),
+            charset='utf8mb4',
+            cursorclass=pymysql.cursors.DictCursor
+        )
+        logger.info("Database connection established.")
+        return connection
+    except Exception as e:
+        logger.error(f"Error connecting to the database: {e}")
+        return None
 
 
 def log_chat(thread_id, user_message, assistant_response, ip_address=None, region=None, city=None):
@@ -276,6 +278,7 @@ def log_chat(thread_id, user_message, assistant_response, ip_address=None, regio
             """
             cursor.execute(sql, (thread_id, user_message, assistant_response, ip_address, region, city))
             connection.commit()
+            logger.info("Chat data logged to database with IP and location.")
     except Exception as e:
         logger.error(f"Error inserting into the database: {e}")
     finally:
@@ -291,25 +294,34 @@ def ask1():
     Either way, we give the user the same threadId.
     """
     try:
-        data = request.get_json(silent=True) or {}
+        logger.info("Received request at /askberater")
+
+        data = request.json or {}
         user_message = data.get("message", "")
-        thread_id_from_body = data.get("threadId")
+        thread_id_from_body = data.get("threadId")  # Fallback thread ID from front-end
         ip_address = data.get("ip_address", "")
         region = data.get("region", "")
         city = data.get("city", "")
 
+        logger.info(f"User message: {user_message}")
         user_message_lower = user_message.lower().strip()
 
+        # ----------------------------------------------------------------------
+        # STEP A: Always retrieve or create the OpenAI thread (and session) FIRST
         session_id = request.cookies.get("session_id")
 
-        # Attempt to match an existing session if no cookie but a threadId was provided
+        # If no session_id, see if front-end gave us a threadId
         if not session_id and thread_id_from_body:
+            matching_session_id = None
             for possible_session_id, session_info in session_data.items():
                 if session_info["thread"].id == thread_id_from_body:
-                    session_id = possible_session_id
+                    matching_session_id = possible_session_id
                     break
+            if matching_session_id:
+                logger.info("Found matching session based on front-end threadId.")
+                session_id = matching_session_id
 
-        # Create a brand-new session if necessary
+        # If still no session_id, create a brand-new one
         if not session_id:
             session_id = str(uuid.uuid4())
             session_data[session_id] = {
@@ -317,16 +329,21 @@ def ask1():
                 "user_details": {},
                 "summary": None
             }
+            logger.info(f"New session created with ID: {session_id}")
         elif session_id not in session_data:
             session_data[session_id] = {
                 "thread": client.beta.threads.create(),
                 "user_details": {},
                 "summary": None
             }
+            logger.info(f"Session data initialized for existing session ID: {session_id}")
 
-        # Retrieve the thread ID
+        # We now have a valid sessionId, so get the threadId from it
         thread_id = session_data[session_id]["thread"].id
+        logger.info(f"Using thread ID: {thread_id}")
 
+        # ----------------------------------------------------------------------
+        # STEP B: Define "special" questions + responses
         SPECIAL_RESPONSES = {
             "ich benötige ein baugrundgutachten": [
                 "Hallo! Gerne helfe ich Ihnen dabei. Wissen Sie, wie viele Rammkernsondierungen Sie benötigen oder haben Sie genaue Vorgaben für das Baugrundgutachten, oder benötigen Sie Beratung?",
@@ -350,9 +367,10 @@ def ask1():
             ]
         }
 
-        # Handle "special" response
+        # ----------------------------------------------------------------------
+        # STEP C: If user's question is special, we respond from the special list
         if user_message_lower in SPECIAL_RESPONSES:
-            # Log user message to the thread (optionally, to keep context)
+            # OPTIONAL: Store the user message in the OpenAI thread if you want context
             client.beta.threads.messages.create(
                 thread_id=thread_id,
                 role="user",
@@ -361,41 +379,48 @@ def ask1():
 
             # Pick a random response
             random_response = random.choice(SPECIAL_RESPONSES[user_message_lower])
+
             # Delay
-            time.sleep(1)  # keep the functionality as is
-
+            time.sleep(2)  # or 3, whichever you want
             response_message = random_response
+            logger.info("Returning a special delayed (random) response.")
 
-            # Log assistant's special response to the thread (optionally)
+            # OPTIONAL: Store the assistant's special response in the thread
             client.beta.threads.messages.create(
                 thread_id=thread_id,
                 role="assistant",
                 content=response_message
             )
 
-            # Log to DB
+            # Log to DB (using a placeholder thread_id or the real thread_id)
             log_chat("special-no-openai", user_message, response_message, ip_address, region, city)
 
-            # Return the special response
+            # Return this special response AND the same thread_id
             response = make_response(jsonify({"response": response_message, "thread_id": thread_id}))
             response.set_cookie("session_id", session_id, httponly=True, samesite="None", secure=True)
             return response
 
-        # Otherwise, normal OpenAI flow
-        # 1) Insert user message
+        # ----------------------------------------------------------------------
+        # STEP D: Otherwise, go through normal OpenAI flow
+        # 1) Insert user's message into thread
         client.beta.threads.messages.create(thread_id=thread_id, role="user", content=user_message)
 
         # 2) Call OpenAI
         run = client.beta.threads.runs.create_and_poll(thread_id=thread_id, assistant_id=assistant_id_berater)
         messages = list(client.beta.threads.messages.list(thread_id=thread_id, run_id=run.id))
+
         response_message = messages[0].content[0].text.value
+        logger.info(f"Response from OpenAI: {response_message}")
 
-        # 3) If message is a summary or includes “zusammenfassung” etc., store it
-        if any(word in response_message.lower()
-               for word in ["zusammenfassung", "überblick", "summary", "zusammenfassen", "zusammen "]):
+        # 3) Check if it's a summary or triggers Zoho, etc.
+        if ("zusammenfassung" in response_message.lower() or
+            "überblick" in response_message.lower() or
+            "summary" in response_message.lower() or
+            "zusammenfassen" in response_message.lower() or
+            "zusammen" in response_message.lower()):
             session_data[session_id]['summary'] = response_message
+            logger.info(f"Summary stored for session {session_id}.")
 
-        # 4) If the response includes a known "confirmation" phrase, attempt to parse summary and send to Zoho
         confirmation_response_phrases = [
             "prima! dann werde ich die anfrage so an meine kollegen weiterleiten.",
             "prima! ich werde die anfrage so an meine kollegen weiterleiten.",
@@ -403,12 +428,15 @@ def ask1():
             "prima! dann leite ich die anfrage an meine kollegen weiter.",
             "super! ich werde die anfrage an meine kollegen weiterleiten."
         ]
+
         if any(phrase in response_message.lower() for phrase in confirmation_response_phrases):
+            logger.info("Assistant provided the confirmation message.")
             confirmed_summary = session_data[session_id].get('summary')
             if confirmed_summary:
                 user_details = extract_details_from_summary(confirmed_summary)
                 if user_details:
                     session_data[session_id]['user_details'] = user_details
+                    logger.info(f"Parsed User Details: {user_details}")
                     send_to_zoho(user_details)
                     response_message += "\n\nIhre Daten wurden erfolgreich übermittelt."
                 else:
@@ -417,9 +445,12 @@ def ask1():
             else:
                 logger.error("No summary found to confirm.")
                 response_message = "Entschuldigung, ich konnte Ihre Zusammenfassung nicht finden."
+        else:
+            logger.info("Assistant did not provide the confirmation message.")
 
-        # 5) Log chat to DB and return
+        # 4) Log and return
         log_chat(thread_id, user_message, response_message, ip_address, region, city)
+
         response = make_response(jsonify({"response": response_message, "thread_id": thread_id}))
         response.set_cookie("session_id", session_id, httponly=True, samesite='None', secure=True)
         return response
@@ -430,7 +461,5 @@ def ask1():
 
 
 if __name__ == "__main__":
-    # Log environment variable info once
-    log_startup_info()
     # Run the Flask app
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)), debug=True)
