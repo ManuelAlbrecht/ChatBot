@@ -460,6 +460,91 @@ def ask1():
         return jsonify({"response": "Entschuldigung, ein Fehler ist aufgetreten."}), 500
 
 
+@app.route("/ersatzbaustoffverordnung", methods=["POST"])
+def ersatzbaustoffverordnung():
+    """
+    Endpoint for a simple assistant that responds to user questions related to
+    Ersatzbaustoffverordnung. Maintains thread IDs for conversation continuity.
+    """
+    try:
+        logger.info("Received request at /ersatzbaustoffverordnung")
+
+        # Parse the incoming JSON payload
+        data = request.json or {}
+        user_message = data.get("message", "").strip()
+        thread_id_from_body = data.get("threadId")  # Optional thread ID from frontend
+
+        # Get the assistant ID for this endpoint
+        assistant_id = os.getenv("ASSISTANT_ID_ersatzbaustoffverordnung.online")
+        if not assistant_id:
+            logger.error("ASSISTANT_ID_ersatzbaustoffverordnung is not set in environment variables.")
+            return jsonify({"response": "Assistant configuration error."}), 500
+
+        # Session and thread management (similar to askberater)
+        session_id = request.cookies.get("session_id")
+        if not session_id and thread_id_from_body:
+            matching_session_id = None
+            for possible_session_id, session_info in session_data.items():
+                if session_info["thread"].id == thread_id_from_body:
+                    matching_session_id = possible_session_id
+                    break
+            if matching_session_id:
+                session_id = matching_session_id
+
+        if not session_id:
+            # Create a brand-new session
+            session_id = str(uuid.uuid4())
+            session_data[session_id] = {
+                "thread": client.beta.threads.create(),
+                "user_details": {},
+                "summary": None
+            }
+            logger.info(f"New session created with ID: {session_id}")
+        elif session_id not in session_data:
+            # Initialize session data if not found
+            session_data[session_id] = {
+                "thread": client.beta.threads.create(),
+                "user_details": {},
+                "summary": None
+            }
+            logger.info(f"Session data initialized for existing session ID: {session_id}")
+
+        thread_id = session_data[session_id]["thread"].id
+        logger.info(f"Using thread ID: {thread_id}")
+
+        # Add user message to the thread
+        client.beta.threads.messages.create(
+            thread_id=thread_id, 
+            role="user", 
+            content=user_message
+        )
+
+        # Call the assistant (poll until complete)
+        run = client.beta.threads.runs.create_and_poll(
+            thread_id=thread_id, 
+            assistant_id=assistant_id
+        )
+        messages = list(
+            client.beta.threads.messages.list(thread_id=thread_id, run_id=run.id)
+        )
+
+        # Extract the response from OpenAI
+        response_message = messages[0].content[0].text.value
+        logger.info(f"Response from Ersatzbaustoffverordnung assistant: {response_message}")
+
+        # Return the assistant's response
+        # (You could log it to DB here if needed, but for now it's just returned)
+        response = make_response(jsonify({"response": response_message, "thread_id": thread_id}))
+        response.set_cookie("session_id", session_id, httponly=True, samesite="None", secure=True)
+        return response
+
+    except Exception as e:
+        logger.error(f"Error in /ersatzbaustoffverordnung: {e}")
+        return jsonify({"response": "Entschuldigung, ein Fehler ist aufgetreten."}), 500
+
+
+
+
 if __name__ == "__main__":
     # Run the Flask app
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)), debug=True)
