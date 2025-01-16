@@ -285,6 +285,34 @@ def log_chat(thread_id, user_message, assistant_response, ip_address=None, regio
         connection.close()
 
 
+def log_chat_ersatz(thread_id, user_message, assistant_response):
+    """
+    Logs the conversation for /ersatzbaustoffverordnung into the ersatzbaustoffverordnung_log table.
+    IP, region, and city are NOT fetched from the user and thus stored as empty strings.
+    """
+    connection = get_db_connection()
+    if connection is None:
+        logger.error("Failed to log ersatz chat: No database connection.")
+        return
+    
+    try:
+        with connection.cursor() as cursor:
+            sql = """
+                INSERT INTO ersatzbaustoffverordnung_log 
+                (thread_id, user_message, assistant_response, ip_address, region, city)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """
+            # We store empty strings for ip_address, region, city.
+            cursor.execute(sql, (thread_id, user_message, assistant_response, '', '', ''))
+            connection.commit()
+            logger.info("Chat data logged to ersatzbaustoffverordnung_log.")
+    except Exception as e:
+        logger.error(f"Error inserting into ersatzbaustoffverordnung_log: {e}")
+    finally:
+        connection.close()
+
+
+
 @app.route("/askberater", methods=["POST"])
 def ask1():
     """
@@ -480,7 +508,7 @@ def ersatzbaustoffverordnung():
             logger.error("ASSISTANT_ID_ersatzbaustoffverordnung is not set in environment variables.")
             return jsonify({"response": "Assistant configuration error."}), 500
 
-        # Session and thread management (similar to askberater)
+        # Session and thread management
         session_id = request.cookies.get("session_id")
         if not session_id and thread_id_from_body:
             matching_session_id = None
@@ -492,7 +520,6 @@ def ersatzbaustoffverordnung():
                 session_id = matching_session_id
 
         if not session_id:
-            # Create a brand-new session
             session_id = str(uuid.uuid4())
             session_data[session_id] = {
                 "thread": client.beta.threads.create(),
@@ -501,7 +528,6 @@ def ersatzbaustoffverordnung():
             }
             logger.info(f"New session created with ID: {session_id}")
         elif session_id not in session_data:
-            # Initialize session data if not found
             session_data[session_id] = {
                 "thread": client.beta.threads.create(),
                 "user_details": {},
@@ -519,7 +545,7 @@ def ersatzbaustoffverordnung():
             content=user_message
         )
 
-        # Call the assistant (poll until complete)
+        # Call the second assistant
         run = client.beta.threads.runs.create_and_poll(
             thread_id=thread_id, 
             assistant_id=assistant_id
@@ -528,12 +554,15 @@ def ersatzbaustoffverordnung():
             client.beta.threads.messages.list(thread_id=thread_id, run_id=run.id)
         )
 
-        # Extract the response from OpenAI
+        # Extract the response
         response_message = messages[0].content[0].text.value
         logger.info(f"Response from Ersatzbaustoffverordnung assistant: {response_message}")
 
+        # >>>>>>>>>>>>>>> ADD THIS LINE <<<<<<<<<<<<<<<
+        # Now log the conversation in ersatzbaustoffverordnung_log
+        log_chat_ersatz(thread_id, user_message, response_message)
+
         # Return the assistant's response
-        # (You could log it to DB here if needed, but for now it's just returned)
         response = make_response(jsonify({"response": response_message, "thread_id": thread_id}))
         response.set_cookie("session_id", session_id, httponly=True, samesite="None", secure=True)
         return response
