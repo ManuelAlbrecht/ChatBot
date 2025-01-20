@@ -314,6 +314,106 @@ def log_chat_ersatz(thread_id, user_message, assistant_response):
     finally:
         connection.close()
 
+def log_chat_kreislauf(thread_id, user_message, assistant_response):
+    """
+    Logs chats for /kreislaufwirtschaftsgesetz into kreislaufwirtschaftsgesetz_logs.
+    """
+    connection = get_db_connection()
+    if connection is None:
+        logger.error("Failed to log kreislauf chat: No database connection.")
+        return
+    
+    try:
+        with connection.cursor() as cursor:
+            sql = """
+                INSERT INTO kreislaufwirtschaftsgesetz_logs
+                (thread_id, user_message, assistant_response, ip_address, region, city)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """
+            cursor.execute(sql, (thread_id, user_message, assistant_response, '', '', ''))
+            connection.commit()
+            logger.info("Chat data logged to kreislaufwirtschaftsgesetz_logs.")
+    except Exception as e:
+        logger.error(f"Error inserting into kreislaufwirtschaftsgesetz_logs: {e}")
+    finally:
+        connection.close()
+
+
+def log_chat_bundesbodenschutz(thread_id, user_message, assistant_response):
+    """
+    Logs chats for /bundesbodenschutzverordnung into bundesbodenschutzverordnung_logs.
+    """
+    connection = get_db_connection()
+    if connection is None:
+        logger.error("Failed to log bundesboden chat: No database connection.")
+        return
+    
+    try:
+        with connection.cursor() as cursor:
+            sql = """
+                INSERT INTO bundesbodenschutzverordnung_logs
+                (thread_id, user_message, assistant_response, ip_address, region, city)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """
+            cursor.execute(sql, (thread_id, user_message, assistant_response, '', '', ''))
+            connection.commit()
+            logger.info("Chat data logged to bundesbodenschutzverordnung_logs.")
+    except Exception as e:
+        logger.error(f"Error inserting into bundesbodenschutzverordnung_logs: {e}")
+    finally:
+        connection.close()
+
+
+def log_chat_lagapn98(thread_id, user_message, assistant_response):
+    """
+    Logs chats for /lagapn98 into lagapn98_logs.
+    """
+    connection = get_db_connection()
+    if connection is None:
+        logger.error("Failed to log lagapn98 chat: No database connection.")
+        return
+    
+    try:
+        with connection.cursor() as cursor:
+            sql = """
+                INSERT INTO lagapn98_logs
+                (thread_id, user_message, assistant_response, ip_address, region, city)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """
+            cursor.execute(sql, (thread_id, user_message, assistant_response, '', '', ''))
+            connection.commit()
+            logger.info("Chat data logged to lagapn98_logs.")
+    except Exception as e:
+        logger.error(f"Error inserting into lagapn98_logs: {e}")
+    finally:
+        connection.close()
+
+
+def log_chat_deponie(thread_id, user_message, assistant_response):
+    """
+    Logs chats for /deponieverordnung into deponieverordnung_logs.
+    """
+    connection = get_db_connection()
+    if connection is None:
+        logger.error("Failed to log deponie chat: No database connection.")
+        return
+    
+    try:
+        with connection.cursor() as cursor:
+            sql = """
+                INSERT INTO deponieverordnung_logs
+                (thread_id, user_message, assistant_response, ip_address, region, city)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """
+            cursor.execute(sql, (thread_id, user_message, assistant_response, '', '', ''))
+            connection.commit()
+            logger.info("Chat data logged to deponieverordnung_logs.")
+    except Exception as e:
+        logger.error(f"Error inserting into deponieverordnung_logs: {e}")
+    finally:
+        connection.close()
+
+
 
 
 @app.route("/askberater", methods=["POST"])
@@ -573,6 +673,281 @@ def ersatzbaustoffverordnung():
     except Exception as e:
         logger.error(f"Error in /ersatzbaustoffverordnung: {e}")
         return jsonify({"response": "Entschuldigung, ein Fehler ist aufgetreten."}), 500
+
+
+@app.route("/kreislaufwirtschaftsgesetz", methods=["POST"])
+def kreislaufwirtschaftsgesetz():
+    """
+    Endpoint for a simple assistant about Kreislaufwirtschaftsgesetz.
+    Logs to kreislaufwirtschaftsgesetz_logs.
+    """
+    try:
+        logger.info("Received request at /kreislaufwirtschaftsgesetz")
+
+        data = request.json or {}
+        user_message = data.get("message", "").strip()
+        thread_id_from_body = data.get("threadId")  # Optional
+
+        assistant_id = os.getenv("ASSISTANT_ID_kreislaufwirtschaftsgesetz.online")
+        if not assistant_id:
+            logger.error("ASSISTANT_ID_kreislaufwirtschaftsgesetz is not set.")
+            return jsonify({"response": "Assistant configuration error."}), 500
+
+        # Session logic
+        session_id = request.cookies.get("session_id")
+        if not session_id and thread_id_from_body:
+            matching_session_id = None
+            for possible_session_id, session_info in session_data.items():
+                if session_info["thread"].id == thread_id_from_body:
+                    matching_session_id = possible_session_id
+                    break
+            if matching_session_id:
+                session_id = matching_session_id
+
+        if not session_id:
+            session_id = str(uuid.uuid4())
+            session_data[session_id] = {
+                "thread": client.beta.threads.create(),
+                "user_details": {},
+                "summary": None
+            }
+            logger.info(f"New session created with ID: {session_id}")
+        elif session_id not in session_data:
+            session_data[session_id] = {
+                "thread": client.beta.threads.create(),
+                "user_details": {},
+                "summary": None
+            }
+            logger.info(f"Session data initialized for existing session ID: {session_id}")
+
+        thread_id = session_data[session_id]["thread"].id
+        logger.info(f"Using thread ID: {thread_id}")
+
+        # Send user message
+        client.beta.threads.messages.create(thread_id=thread_id, role="user", content=user_message)
+
+        # Call the assistant
+        run = client.beta.threads.runs.create_and_poll(thread_id=thread_id, assistant_id=assistant_id)
+        messages = list(client.beta.threads.messages.list(thread_id=thread_id, run_id=run.id))
+
+        response_message = messages[0].content[0].text.value
+        logger.info(f"Response from Kreislaufwirtschaftsgesetz: {response_message}")
+
+        # Log to kreislauf table
+        log_chat_kreislauf(thread_id, user_message, response_message)
+
+        response = make_response(jsonify({"response": response_message, "thread_id": thread_id}))
+        response.set_cookie("session_id", session_id, httponly=True, samesite="None", secure=True)
+        return response
+
+    except Exception as e:
+        logger.error(f"Error in /kreislaufwirtschaftsgesetz: {e}")
+        return jsonify({"response": "Entschuldigung, ein Fehler ist aufgetreten."}), 500
+
+
+@app.route("/bundesbodenschutzverordnung", methods=["POST"])
+def bundesbodenschutzverordnung():
+    """
+    Endpoint for a simple assistant about Bundesbodenschutzverordnung.
+    Logs to bundesbodenschutzverordnung_logs.
+    """
+    try:
+        logger.info("Received request at /bundesbodenschutzverordnung")
+
+        data = request.json or {}
+        user_message = data.get("message", "").strip()
+        thread_id_from_body = data.get("threadId", "")
+
+        assistant_id = os.getenv("ASSISTANT_ID_bundesbodenschutzverordnung.online")
+        if not assistant_id:
+            logger.error("ASSISTANT_ID_bundesbodenschutzverordnung is not set.")
+            return jsonify({"response": "Assistant configuration error."}), 500
+
+        # Session logic
+        session_id = request.cookies.get("session_id")
+        if not session_id and thread_id_from_body:
+            matching_session_id = None
+            for possible_session_id, session_info in session_data.items():
+                if session_info["thread"].id == thread_id_from_body:
+                    matching_session_id = possible_session_id
+                    break
+            if matching_session_id:
+                session_id = matching_session_id
+
+        if not session_id:
+            session_id = str(uuid.uuid4())
+            session_data[session_id] = {
+                "thread": client.beta.threads.create(),
+                "user_details": {},
+                "summary": None
+            }
+            logger.info(f"New session created with ID: {session_id}")
+        elif session_id not in session_data:
+            session_data[session_id] = {
+                "thread": client.beta.threads.create(),
+                "user_details": {},
+                "summary": None
+            }
+            logger.info(f"Session data initialized for existing session ID: {session_id}")
+
+        thread_id = session_data[session_id]["thread"].id
+        logger.info(f"Using thread ID: {thread_id}")
+
+        # Send user message
+        client.beta.threads.messages.create(thread_id=thread_id, role="user", content=user_message)
+
+        # Call assistant
+        run = client.beta.threads.runs.create_and_poll(thread_id=thread_id, assistant_id=assistant_id)
+        messages = list(client.beta.threads.messages.list(thread_id=thread_id, run_id=run.id))
+
+        response_message = messages[0].content[0].text.value
+        logger.info(f"Response from Bundesbodenschutzverordnung: {response_message}")
+
+        # Log to bundesbodenschutzverordnung_logs
+        log_chat_bundesbodenschutz(thread_id, user_message, response_message)
+
+        response = make_response(jsonify({"response": response_message, "thread_id": thread_id}))
+        response.set_cookie("session_id", session_id, httponly=True, samesite="None", secure=True)
+        return response
+
+    except Exception as e:
+        logger.error(f"Error in /bundesbodenschutzverordnung: {e}")
+        return jsonify({"response": "Entschuldigung, ein Fehler ist aufgetreten."}), 500
+
+
+@app.route("/lagapn98", methods=["POST"])
+def lagapn98():
+    """
+    Endpoint for a simple assistant about LAGA PN 98.
+    Logs to lagapn98_logs.
+    """
+    try:
+        logger.info("Received request at /lagapn98")
+
+        data = request.json or {}
+        user_message = data.get("message", "").strip()
+        thread_id_from_body = data.get("threadId", "")
+
+        assistant_id = os.getenv("ASSISTANT_ID_laga-pn-98.online")
+        if not assistant_id:
+            logger.error("ASSISTANT_ID_lagapn98 is not set.")
+            return jsonify({"response": "Assistant configuration error."}), 500
+
+        session_id = request.cookies.get("session_id")
+        if not session_id and thread_id_from_body:
+            matching_session_id = None
+            for possible_session_id, session_info in session_data.items():
+                if session_info["thread"].id == thread_id_from_body:
+                    matching_session_id = possible_session_id
+                    break
+            if matching_session_id:
+                session_id = matching_session_id
+
+        if not session_id:
+            session_id = str(uuid.uuid4())
+            session_data[session_id] = {
+                "thread": client.beta.threads.create(),
+                "user_details": {},
+                "summary": None
+            }
+            logger.info(f"New session created with ID: {session_id}")
+        elif session_id not in session_data:
+            session_data[session_id] = {
+                "thread": client.beta.threads.create(),
+                "user_details": {},
+                "summary": None
+            }
+            logger.info(f"Session data initialized for existing session ID: {session_id}")
+
+        thread_id = session_data[session_id]["thread"].id
+        logger.info(f"Using thread ID: {thread_id}")
+
+        client.beta.threads.messages.create(thread_id=thread_id, role="user", content=user_message)
+
+        run = client.beta.threads.runs.create_and_poll(thread_id=thread_id, assistant_id=assistant_id)
+        messages = list(client.beta.threads.messages.list(thread_id=thread_id, run_id=run.id))
+
+        response_message = messages[0].content[0].text.value
+        logger.info(f"Response from LAGA PN 98: {response_message}")
+
+        # Log to lagapn98_logs
+        log_chat_lagapn98(thread_id, user_message, response_message)
+
+        response = make_response(jsonify({"response": response_message, "thread_id": thread_id}))
+        response.set_cookie("session_id", session_id, httponly=True, samesite="None", secure=True)
+        return response
+
+    except Exception as e:
+        logger.error(f"Error in /lagapn98: {e}")
+        return jsonify({"response": "Entschuldigung, ein Fehler ist aufgetreten."}), 500
+
+
+@app.route("/deponieverordnung", methods=["POST"])
+def deponieverordnung():
+    """
+    Endpoint for a simple assistant about Deponieverordnung.
+    Logs to deponieverordnung_logs.
+    """
+    try:
+        logger.info("Received request at /deponieverordnung")
+
+        data = request.json or {}
+        user_message = data.get("message", "").strip()
+        thread_id_from_body = data.get("threadId", "")
+
+        assistant_id = os.getenv("ASSISTANT_ID_deponieverordnung.online")
+        if not assistant_id:
+            logger.error("ASSISTANT_ID_deponieverordnung is not set.")
+            return jsonify({"response": "Assistant configuration error."}), 500
+
+        session_id = request.cookies.get("session_id")
+        if not session_id and thread_id_from_body:
+            matching_session_id = None
+            for possible_session_id, session_info in session_data.items():
+                if session_info["thread"].id == thread_id_from_body:
+                    matching_session_id = possible_session_id
+                    break
+            if matching_session_id:
+                session_id = matching_session_id
+
+        if not session_id:
+            session_id = str(uuid.uuid4())
+            session_data[session_id] = {
+                "thread": client.beta.threads.create(),
+                "user_details": {},
+                "summary": None
+            }
+            logger.info(f"New session created with ID: {session_id}")
+        elif session_id not in session_data:
+            session_data[session_id] = {
+                "thread": client.beta.threads.create(),
+                "user_details": {},
+                "summary": None
+            }
+            logger.info(f"Session data initialized for existing session ID: {session_id}")
+
+        thread_id = session_data[session_id]["thread"].id
+        logger.info(f"Using thread ID: {thread_id}")
+
+        client.beta.threads.messages.create(thread_id=thread_id, role="user", content=user_message)
+
+        run = client.beta.threads.runs.create_and_poll(thread_id=thread_id, assistant_id=assistant_id)
+        messages = list(client.beta.threads.messages.list(thread_id=thread_id, run_id=run.id))
+
+        response_message = messages[0].content[0].text.value
+        logger.info(f"Response from Deponieverordnung: {response_message}")
+
+        # Log to deponieverordnung_logs
+        log_chat_deponie(thread_id, user_message, response_message)
+
+        response = make_response(jsonify({"response": response_message, "thread_id": thread_id}))
+        response.set_cookie("session_id", session_id, httponly=True, samesite="None", secure=True)
+        return response
+
+    except Exception as e:
+        logger.error(f"Error in /deponieverordnung: {e}")
+        return jsonify({"response": "Entschuldigung, ein Fehler ist aufgetreten."}), 500
+
 
 
 
