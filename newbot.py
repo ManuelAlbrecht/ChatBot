@@ -123,7 +123,8 @@ def extract_details_from_summary(summary):
             'Menge': 'quantity',
             'Beschreibung': 'description',
             'Betreff': 'subject',
-            'Geplanter Start': 'geplanter_start'
+            'Geplanter Start': 'geplanter_start',
+            'Leistung': 'leistung'
         }
 
         lines = summary.splitlines()
@@ -181,6 +182,7 @@ def send_to_zoho(user_details):
         quantity = user_details.get('quantity', '')
         subject = user_details.get('subject', '')
         geplanter_start = user_details.get('geplanter_start', '')
+        leistung_value = user_details.get('leistung', '')
 
         # Convert date format if provided
         if geplanter_start:
@@ -212,7 +214,8 @@ def send_to_zoho(user_details):
                     "Pipeline": pipeline_value,
                     "Stage": stage_value,
                     "Lead_Source": "Chatbot",
-                    "Geplanter_Start": geplanter_start_formatted
+                    "Geplanter_Start": geplanter_start_formatted,
+                    "Leistung_Lieferung": leistung_value
                 }
             ]
         }
