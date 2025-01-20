@@ -35,7 +35,7 @@ else:
 client = OpenAI(api_key=key)
 app = Flask(__name__)
 # Enable CORS with credentials
-CORS(app, supports_credentials=True, origins=["https://probenahmeprotokoll.de", "https://erdbaron.com"])
+CORS(app, supports_credentials=True, origins=["https://probenahmeprotokoll.de", "https://erdbaron.com", "https://ersatzbaustoffverordnung.online"])
 
 # Dictionary to store session data (thread IDs and user details)
 session_data = {}
