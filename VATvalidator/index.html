@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VAT ID Checker</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500&family=Montserrat:wght@500;600&display=swap');
+
+        body {
+            font-family: 'DM Sans', sans-serif;
+            background-color: #F1F1F1;
+            color: #3A3A3A;
+            padding: 5px;
+            margin: 0;
+            text-align: center;
+        }
+
+        h1 {
+            color: #D6AD53;
+            font-size: 20px;
+            margin-top: 0;
+            margin-bottom: 10px;
+            text-align: center;
+            font-family: 'Montserrat', sans-serif;
+            font-weight: bold;
+        }
+
+        h2 {
+            color: #A58F6E;
+            margin-bottom: 20px;
+            font-family: 'Montserrat', sans-serif;
+            font-weight: 600;
+        }
+
+        form {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            text-align: left;
+            border: 2px solid #D6AD53;
+            max-width: 300px;
+            margin: 0 auto;
+        }
+
+        label {
+            color: #3A3A3A;
+            margin-bottom: 5px;
+            display: block;
+            font-family: 'Montserrat', sans-serif;
+            font-weight: 500;
+        }
+
+        input {
+            width: calc(100% - 20px);
+            padding: 10px;
+            margin-bottom: 20px;
+            border: 1px solid #ccc;
+            border-radius: 20px;
+            box-sizing: border-box;
+            font-family: 'Montserrat', sans-serif;
+            margin-top: 2px;
+            font-size: small;
+        }
+
+        button {
+            width: calc(100% - 20px);
+            padding: 10px;
+            margin-bottom: 20px;
+            border: 1px solid #ccc;
+            border-radius: 20px;
+            box-sizing: border-box;
+            font-family: 'Montserrat', sans-serif;
+            margin-top: 10px;
+            font-size: small;
+            background-color: #D6AD53;
+            color: #fff;
+            cursor: pointer;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1.05px;
+        }
+
+        button:hover {
+            background-color: #fff;
+            color: #D6AD53;
+            cursor: pointer;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1.05px;
+            border-color: #D6AD53;
+            border-width: 2px;
+        }
+
+        #result {
+            display: none;
+            margin-top: 20px;
+            font-size: 14px;
+            color: #3A3A3A;
+            background-color: #fff;
+            border: 1px solid #5d432c;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            max-width: 300px;
+            margin: 20px auto 0;
+        }
+
+        #result p {
+            margin: 0;
+        }
+
+        .logo {
+            display: block;
+            margin: 0 auto 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="section">
+            <img src="https://erdbaron.com/wp-content/uploads/2021/02/Erdbaron.svg" alt="Erdbaron Logo" width="150" height="50" class="logo">
+            <h2>VAT ID Checker</h2>
+            <form id="vatForm">
+                <label for="vatId">VAT ID (CountryCodeVATNumber):</label>
+                <input type="text" id="vatId" name="vatId" required>
+                <button type="submit">Check</button>
+            </form>
+            <div id="result"></div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('vatForm').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const vatId = document.getElementById('vatId').value;
+            const countryCode = vatId.slice(0, 2);
+            const vatNumber = vatId.slice(2);
+
+            const response = await fetch('/check-vat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ countryCode, vatNumber })
+            });
+            const result = await response.json();
+            const resultDiv = document.getElementById('result');
+            resultDiv.style.display = 'block';
+            if (result.valid) {
+                resultDiv.innerText = 'Valid VAT ID';
+                resultDiv.style.borderColor = '#4CAF50';
+            } else {
+                resultDiv.innerText = 'Invalid VAT ID';
+                resultDiv.style.borderColor = '#F44336';
+            }
+        });
+    </script>
+</body>
+</html>
