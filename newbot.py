@@ -533,6 +533,11 @@ def ask1():
 
         # ----------------------------------------------------------------------
         # STEP D: Otherwise, go through normal OpenAI flow
+
+        # --- Minimal change: prepend the city to the user's message, if available ---
+        if city and city.lower() != "unavailable":
+            user_message = f"(HINWEIS: Der Benutzer befindet sich in {city}.)\n\n{user_message}"
+
         # 1) Insert user's message into thread
         client.beta.threads.messages.create(thread_id=thread_id, role="user", content=user_message)
 
@@ -589,6 +594,7 @@ def ask1():
     except Exception as e:
         logger.error(f"Error in /askberater: {e}")
         return jsonify({"response": "Entschuldigung, ein Fehler ist aufgetreten."}), 500
+
 
 
 @app.route("/ersatzbaustoffverordnung", methods=["POST"])
