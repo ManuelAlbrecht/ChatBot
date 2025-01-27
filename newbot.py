@@ -536,8 +536,8 @@ def ask1():
 
         # -- Create a separate message for GPT, but keep user_message clean for logging --
         user_message_for_gpt = user_message
-        if city and city.lower() != "unavailable":
-            user_message_for_gpt = f"(HINWEIS: Der Benutzer befindet sich in {city}.)\n\n{user_message}"
+        if region and region.lower() != "unavailable":
+            user_message_for_gpt = f"(HINWEIS: Der Benutzer befindet sich in {region}.)\n\n{user_message}"
 
         # 1) Insert user's message (with city hint) into thread
         client.beta.threads.messages.create(
