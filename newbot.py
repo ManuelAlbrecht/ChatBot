@@ -461,20 +461,6 @@ def ask1():
                 "summary": None
             }
             logger.info(f"New session created with ID: {session_id}")
-
-            # ----- Minimal change: Add a system message with the city -----
-            # Only add if 'city' is not empty or "Unavailable"
-            if city and city.lower() != "unavailable":
-                new_thread_id = session_data[session_id]["thread"].id
-                client.beta.threads.messages.create(
-                    thread_id=new_thread_id,
-                    role="system",
-                    content=(
-                        f"Du bist ein hilfreicher Assistent. Der Benutzer befindet sich in {city}. "
-                        "Bitte berücksichtige diesen Standort, wenn du relevante Antworten gibst."
-                    )
-                )
-
         elif session_id not in session_data:
             session_data[session_id] = {
                 "thread": client.beta.threads.create(),
@@ -482,18 +468,6 @@ def ask1():
                 "summary": None
             }
             logger.info(f"Session data initialized for existing session ID: {session_id}")
-
-            # ----- Minimal change: Add a system message with the city -----
-            if city and city.lower() != "unavailable":
-                new_thread_id = session_data[session_id]["thread"].id
-                client.beta.threads.messages.create(
-                    thread_id=new_thread_id,
-                    role="system",
-                    content=(
-                        f"Du bist ein hilfreicher Assistent. Der Benutzer befindet sich in {city}. "
-                        "Bitte berücksichtige diesen Standort, wenn du relevante Antworten gibst."
-                    )
-                )
 
         # We now have a valid sessionId, so get the threadId from it
         thread_id = session_data[session_id]["thread"].id
@@ -615,7 +589,6 @@ def ask1():
     except Exception as e:
         logger.error(f"Error in /askberater: {e}")
         return jsonify({"response": "Entschuldigung, ein Fehler ist aufgetreten."}), 500
-
 
 
 @app.route("/ersatzbaustoffverordnung", methods=["POST"])
