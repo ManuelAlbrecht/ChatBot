@@ -470,8 +470,8 @@ def ask1():
                     thread_id=new_thread_id,
                     role="system",
                     content=(
-                        f"You are a helpful assistant. The user is located in {city}. "
-                        "Please consider this location context when providing answers."
+                        f"Du bist ein hilfreicher Assistent. Der Benutzer befindet sich in {city}. "
+                        "Bitte berücksichtige diesen Standort, wenn du relevante Antworten gibst."
                     )
                 )
 
@@ -490,8 +490,8 @@ def ask1():
                     thread_id=new_thread_id,
                     role="system",
                     content=(
-                        f"You are a helpful assistant. The user is located in {city}. "
-                        "Please consider this location context when providing answers."
+                        f"Du bist ein hilfreicher Assistent. Der Benutzer befindet sich in {city}. "
+                        "Bitte berücksichtige diesen Standort, wenn du relevante Antworten gibst."
                     )
                 )
 
