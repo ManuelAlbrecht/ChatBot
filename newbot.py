@@ -534,12 +534,17 @@ def ask1():
         # ----------------------------------------------------------------------
         # STEP D: Otherwise, go through normal OpenAI flow
 
-        # --- Minimal change: prepend the city to the user's message, if available ---
+        # -- Create a separate message for GPT, but keep user_message clean for logging --
+        user_message_for_gpt = user_message
         if city and city.lower() != "unavailable":
-            user_message = f"(HINWEIS: Der Benutzer befindet sich in {city}.)\n\n{user_message}"
+            user_message_for_gpt = f"(HINWEIS: Der Benutzer befindet sich in {city}.)\n\n{user_message}"
 
-        # 1) Insert user's message into thread
-        client.beta.threads.messages.create(thread_id=thread_id, role="user", content=user_message)
+        # 1) Insert user's message (with city hint) into thread
+        client.beta.threads.messages.create(
+            thread_id=thread_id,
+            role="user",
+            content=user_message_for_gpt
+        )
 
         # 2) Call OpenAI
         run = client.beta.threads.runs.create_and_poll(thread_id=thread_id, assistant_id=assistant_id_berater)
@@ -585,6 +590,7 @@ def ask1():
             logger.info("Assistant did not provide the confirmation message.")
 
         # 4) Log and return
+        # Here we log the original user_message (no city hint) to the DB
         log_chat(thread_id, user_message, response_message, ip_address, region, city)
 
         response = make_response(jsonify({"response": response_message, "thread_id": thread_id}))
@@ -594,6 +600,7 @@ def ask1():
     except Exception as e:
         logger.error(f"Error in /askberater: {e}")
         return jsonify({"response": "Entschuldigung, ein Fehler ist aufgetreten."}), 500
+
 
 
 
