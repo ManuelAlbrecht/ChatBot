@@ -609,6 +609,7 @@ def ersatzbaustoffverordnung():
     """
     Endpoint for a simple assistant that responds to user questions related to
     Ersatzbaustoffverordnung. Maintains thread IDs for conversation continuity.
+    Now also logs IP address, region, and city.
     """
     try:
         logger.info("Received request at /ersatzbaustoffverordnung")
@@ -616,7 +617,14 @@ def ersatzbaustoffverordnung():
         # Parse the incoming JSON payload
         data = request.json or {}
         user_message = data.get("message", "").strip()
-        thread_id_from_body = data.get("threadId")  # Optional thread ID from frontend
+        thread_id_from_body = data.get("threadId", "")  # Optional thread ID from frontend
+
+        # Fetch IP, Region, and City from the request
+        ip_address = data.get("ip_address", "Unavailable")
+        region = data.get("region", "Unavailable")
+        city = data.get("city", "Unavailable")
+
+        logger.info(f"User message: {user_message}, IP: {ip_address}, Region: {region}, City: {city}")
 
         # Get the assistant ID for this endpoint
         assistant_id = os.getenv("ASSISTANT_ID_ersatzbaustoffverordnung.online")
@@ -661,7 +669,7 @@ def ersatzbaustoffverordnung():
             content=user_message
         )
 
-        # Call the second assistant
+        # Call the assistant
         run = client.beta.threads.runs.create_and_poll(
             thread_id=thread_id, 
             assistant_id=assistant_id
@@ -674,9 +682,8 @@ def ersatzbaustoffverordnung():
         response_message = messages[0].content[0].text.value
         logger.info(f"Response from Ersatzbaustoffverordnung assistant: {response_message}")
 
-        # >>>>>>>>>>>>>>> ADD THIS LINE <<<<<<<<<<<<<<<
-        # Now log the conversation in ersatzbaustoffverordnung_log
-        log_chat_ersatz(thread_id, user_message, response_message)
+        # Log the conversation with IP, region, and city
+        log_chat_ersatz(thread_id, user_message, response_message, ip_address, region, city)
 
         # Return the assistant's response
         response = make_response(jsonify({"response": response_message, "thread_id": thread_id}))
@@ -686,6 +693,7 @@ def ersatzbaustoffverordnung():
     except Exception as e:
         logger.error(f"Error in /ersatzbaustoffverordnung: {e}")
         return jsonify({"response": "Entschuldigung, ein Fehler ist aufgetreten."}), 500
+
 
 
 @app.route("/kreislaufwirtschaftsgesetz", methods=["POST"])
