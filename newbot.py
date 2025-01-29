@@ -288,10 +288,10 @@ def log_chat(thread_id, user_message, assistant_response, ip_address=None, regio
         connection.close()
 
 
-def log_chat_ersatz(thread_id, user_message, assistant_response):
+def log_chat_ersatz(thread_id, user_message, assistant_response, ip_address, region, city):
     """
     Logs the conversation for /ersatzbaustoffverordnung into the ersatzbaustoffverordnung_log table.
-    IP, region, and city are NOT fetched from the user and thus stored as empty strings.
+    Now stores the user's IP, region, and city (instead of empty strings).
     """
     connection = get_db_connection()
     if connection is None:
@@ -305,10 +305,9 @@ def log_chat_ersatz(thread_id, user_message, assistant_response):
                 (thread_id, user_message, assistant_response, ip_address, region, city)
                 VALUES (%s, %s, %s, %s, %s, %s)
             """
-            # We store empty strings for ip_address, region, city.
-            cursor.execute(sql, (thread_id, user_message, assistant_response, '', '', ''))
+            cursor.execute(sql, (thread_id, user_message, assistant_response, ip_address, region, city))
             connection.commit()
-            logger.info("Chat data logged to ersatzbaustoffverordnung_log.")
+            logger.info("Chat data logged to ersatzbaustoffverordnung_log with location fields.")
     except Exception as e:
         logger.error(f"Error inserting into ersatzbaustoffverordnung_log: {e}")
     finally:
@@ -619,7 +618,6 @@ def ersatzbaustoffverordnung():
         user_message = data.get("message", "").strip()
         thread_id_from_body = data.get("threadId", "")  # Optional thread ID from frontend
 
-        # Fetch IP, Region, and City from the request
         ip_address = data.get("ip_address", "Unavailable")
         region = data.get("region", "Unavailable")
         city = data.get("city", "Unavailable")
@@ -674,15 +672,13 @@ def ersatzbaustoffverordnung():
             thread_id=thread_id, 
             assistant_id=assistant_id
         )
-        messages = list(
-            client.beta.threads.messages.list(thread_id=thread_id, run_id=run.id)
-        )
+        messages = list(client.beta.threads.messages.list(thread_id=thread_id, run_id=run.id))
 
         # Extract the response
         response_message = messages[0].content[0].text.value
         logger.info(f"Response from Ersatzbaustoffverordnung assistant: {response_message}")
 
-        # Log the conversation with IP, region, and city
+        # >>> NOW log the conversation with IP, region, city
         log_chat_ersatz(thread_id, user_message, response_message, ip_address, region, city)
 
         # Return the assistant's response
