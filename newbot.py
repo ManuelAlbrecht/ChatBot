@@ -215,7 +215,10 @@ def send_to_zoho(user_details):
                     "Stage": stage_value,
                     "Lead_Source": "Chatbot",
                     "Geplanter_Start": geplanter_start_formatted,
-                    "Leistung_Lieferung": leistung_value
+                    "Leistung_Lieferung": leistung_value,
+                    "BenutzerIP": user_details.get("ip_address", ""),
+                    "Benutzerregion": user_details.get("region", ""),
+                    "Benutzerstadt": user_details.get("city", "")
                 }
             ]
         }
