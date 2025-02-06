@@ -316,6 +316,7 @@ def log_chat_ersatz(thread_id, user_message, assistant_response, ip_address, reg
     finally:
         connection.close()
 
+
 def log_chat_kreislauf(thread_id, user_message, assistant_response):
     """
     Logs chats for /kreislaufwirtschaftsgesetz into kreislaufwirtschaftsgesetz_logs.
@@ -437,7 +438,7 @@ def ask1():
         city = data.get("city", "")
 
         logger.info(f"User message: {user_message}")
-        user_message_lower = user_message.lower().strip()
+        logger.info(f"Received IP: {ip_address}, Region: {region}, City: {city}")
 
         # ----------------------------------------------------------------------
         # STEP A: Always retrieve or create the OpenAI thread (and session) FIRST
@@ -502,7 +503,7 @@ def ask1():
 
         # ----------------------------------------------------------------------
         # STEP C: If user's question is special, we respond from the special list
-        if user_message_lower in SPECIAL_RESPONSES:
+        if user_message.lower().strip() in SPECIAL_RESPONSES:
             # OPTIONAL: Store the user message in the OpenAI thread if you want context
             client.beta.threads.messages.create(
                 thread_id=thread_id,
@@ -511,7 +512,7 @@ def ask1():
             )
 
             # Pick a random response
-            random_response = random.choice(SPECIAL_RESPONSES[user_message_lower])
+            random_response = random.choice(SPECIAL_RESPONSES[user_message.lower().strip()])
 
             # Delay
             time.sleep(1)
@@ -578,6 +579,10 @@ def ask1():
             if confirmed_summary:
                 user_details = extract_details_from_summary(confirmed_summary)
                 if user_details:
+                    # Add IP, region, and city values from the request to the user_details
+                    user_details["ip_address"] = ip_address
+                    user_details["region"] = region
+                    user_details["city"] = city
                     session_data[session_id]['user_details'] = user_details
                     logger.info(f"Parsed User Details: {user_details}")
                     send_to_zoho(user_details)
@@ -967,7 +972,6 @@ def deponieverordnung():
     except Exception as e:
         logger.error(f"Error in /deponieverordnung: {e}")
         return jsonify({"response": "Entschuldigung, ein Fehler ist aufgetreten."}), 500
-
 
 
 
