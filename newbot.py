@@ -975,6 +975,101 @@ def deponieverordnung():
 
 
 
+@app.route("/pricefinder", methods=["POST"])
+def pricefinder():
+    """
+    Endpoint for your 'pricefinder' assistant.
+    Expects JSON with { "postcode": "...", "verordnung": "...", "klasse": "...", "threadId": "..."(optional) }.
+    Returns { "response": "...", "thread_id": "..." } with a numeric or textual answer.
+    """
+    try:
+        logger.info("Received request at /pricefinder")
+
+        data = request.json or {}
+        postcode = data.get("postcode", "").strip()
+        verordnung = data.get("verordnung", "").strip()
+        klasse = data.get("klasse", "").strip()
+
+        # If your code uses sessionID/threadId logic:
+        thread_id_from_body = data.get("threadId", "")
+        session_id = request.cookies.get("session_id")
+
+        # Use a dedicated pricefinder assistant ID
+        # e.g., 'ASSISTANT_ID_pricefinder' from your environment
+        assistant_id = os.getenv("ASSISTANT_ID_pricefinder")
+        if not assistant_id:
+            logger.error("ASSISTANT_ID_pricefinder is not set in environment variables.")
+            return jsonify({"response": "Assistant configuration error."}), 500
+
+        # Step A: Manage session
+        if not session_id and thread_id_from_body:
+            matching_session_id = None
+            for possible_session_id, session_info in session_data.items():
+                if session_info["thread"].id == thread_id_from_body:
+                    matching_session_id = possible_session_id
+                    break
+            if matching_session_id:
+                session_id = matching_session_id
+
+        if not session_id:
+            session_id = str(uuid.uuid4())
+            session_data[session_id] = {
+                "thread": client.beta.threads.create(),
+                "user_details": {},
+                "summary": None
+            }
+            logger.info(f"New session created with ID: {session_id}")
+        elif session_id not in session_data:
+            # If the cookie points to a missing session, re-init
+            session_data[session_id] = {
+                "thread": client.beta.threads.create(),
+                "user_details": {},
+                "summary": None
+            }
+            logger.info(f"Session data re-initialized for existing session ID: {session_id}")
+
+        thread_id = session_data[session_id]["thread"].id
+        logger.info(f"Using thread ID: {thread_id}")
+
+        # Step B: Construct a user message
+        user_message = (
+            f"Postcode: {postcode}, Verordnung: {verordnung}, Klasse: {klasse}. "
+            f"Please return only the numeric price in euros (no extra text)."
+        )
+
+        # Step C: Add user message to the thread
+        client.beta.threads.messages.create(
+            thread_id=thread_id,
+            role="user",
+            content=user_message
+        )
+
+        # Step D: Call the assistant
+        run = client.beta.threads.runs.create_and_poll(
+            thread_id=thread_id,
+            assistant_id=assistant_id
+        )
+        messages = list(client.beta.threads.messages.list(thread_id=thread_id, run_id=run.id))
+
+        if not messages:
+            logger.error("No messages returned from pricefinder assistant.")
+            return jsonify({"response": "Keine Antwort erhalten.", "thread_id": thread_id})
+
+        response_message = messages[0].content[0].text.value
+        logger.info(f"Response from pricefinder assistant: {response_message}")
+
+        # Step E: Return the result
+        response = make_response(jsonify({"response": response_message, "thread_id": thread_id}))
+        response.set_cookie("session_id", session_id, httponly=True, samesite="None", secure=True)
+        return response
+
+    except Exception as e:
+        logger.error(f"Error in /pricefinder: {e}")
+        return jsonify({"response": "Entschuldigung, ein Fehler ist aufgetreten."}), 500
+
+
+
+
 
 if __name__ == "__main__":
     # Run the Flask app
