@@ -1123,7 +1123,7 @@ def send_to_preisanfragen(postcode, verordnung, klasse, price):
                 "Name": postcode,    # API name => 'Name' field
                 "Verordnung": verordnung, 
                 "Klasse": klasse,
-                "Preis": price
+                "Preis": str(price)
             }
         ]
         payload = {"data": record_data}
