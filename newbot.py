@@ -1146,6 +1146,107 @@ def send_to_preisanfragen(postcode, verordnung, klasse, price):
 
 
 
+@app.route("/preisvorschlag", methods=["POST"])
+def preisvorschlag():
+    """
+    Receives a suggested price plus the fetched price, ZIP, verordnung, klasse, etc.
+    Then stores it in the 'Preisvorschlag' Zoho CRM module.
+
+    API names in Zoho:
+      - Name = postcode
+      - PLZ = postcode
+      - Result = fetchedPrice
+      - Suggestion = suggestedPrice
+      - Verordnung = verordnung
+      - Klasse = klasse
+
+    Returns JSON { "message": "..."} on success or error.
+    """
+    try:
+        logger.info("Received request at /preisvorschlag")
+
+        data = request.json or {}
+        # Extract all relevant fields from the JSON body
+        fetched_price = data.get("fetchedPrice", "").strip()    # system/fallback price
+        suggested_price = data.get("suggestedPrice", "").strip()# user suggestion
+        postcode = data.get("postcode", "").strip()
+        verordnung = data.get("verordnung", "").strip()
+        klasse = data.get("klasse", "").strip()
+
+        # Insert into Zoho's Preisvorschlag module
+        store_preisvorschlag_in_zoho(
+            postcode, verordnung, klasse,
+            fetched_price, suggested_price
+        )
+
+        return jsonify({"message": "Preisvorschlag gespeichert!"})
+
+    except Exception as e:
+        logger.error(f"Error in /preisvorschlag: {e}")
+        return jsonify({"message": "Ein Fehler ist aufgetreten."}), 500
+
+
+def store_preisvorschlag_in_zoho(postcode, verordnung, klasse, fetched_price, suggested_price):
+    """
+    Inserts a record into the 'Preisvorschlag' module in Zoho CRM (v3 or v2).
+    Mapped fields:
+      - Name = postcode
+      - PLZ = postcode
+      - Result = fetchedPrice
+      - Suggestion = suggestedPrice
+      - Verordnung = verordnung
+      - Klasse = klasse
+    """
+    try:
+        ensure_valid_access_token()  # refresh token if needed
+
+        zoho_url = "https://www.zohoapis.eu/crm/v3/Preisvorschlag"  
+        # If your module is literally named 'Preisvorschlag' in the CRM,
+        #   the URL is /Preisvorschlag. If it's /Preisvorschlaege or something,
+        #   adjust accordingly.
+
+        headers = {
+            'Authorization': f'Zoho-oauthtoken {access_token}',
+            'Content-Type': 'application/json'
+        }
+
+        # Build record data using the API names EXACTLY as they appear in Zoho
+        record_data = [
+            {
+                "Name": postcode,            # API name: Name
+                "PLZ": postcode,             # API name: PLZ
+                "Result": fetched_price,     # API name: Result
+                "Suggestion": suggested_price, 
+                "Verordnung": verordnung,
+                "Klasse": klasse
+            }
+        ]
+
+        payload = {"data": record_data}
+
+        logger.info(f"Storing Preisvorschlag => {payload}")
+        response = requests.post(zoho_url, json=payload, headers=headers)
+        logger.info(f"Preisvorschlag insert code: {response.status_code}, text: {response.text}")
+
+        if response.status_code == 401:
+            logger.warning("401 unauthorized => refresh token & retry.")
+            refresh_access_token()
+            headers['Authorization'] = f'Zoho-oauthtoken {access_token}'
+            response = requests.post(zoho_url, json=payload, headers=headers)
+            logger.info(f"Retry code => {response.status_code}, text => {response.text}")
+
+        if response.status_code in (200, 201):
+            logger.info("Successfully inserted record into 'Preisvorschlag' module.")
+        else:
+            logger.error(f"Failed to insert => {response.text}")
+
+    except Exception as e:
+        logger.error(f"Error while storing Preisvorschlag in Zoho => {e}")
+
+
+
+
+
 
 
 
