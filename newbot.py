@@ -10,6 +10,7 @@ import time
 import logging
 from datetime import datetime
 import random  # for random choice
+import re
 
 load_dotenv()
 
