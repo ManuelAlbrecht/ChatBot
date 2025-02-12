@@ -980,28 +980,30 @@ def pricefinder():
     """
     Endpoint for your 'pricefinder' assistant.
     Expects JSON with { "postcode": "...", "verordnung": "...", "klasse": "...", "threadId": "..."(optional) }.
-    Returns { "response": "...", "thread_id": "..." } with a numeric or textual answer.
+    1) Calls the assistant for a numeric fallback price,
+    2) Stores that fallback price in the 'Preisanfragen' Zoho module,
+    3) Returns { "response": "...", "thread_id": "..." }.
     """
     try:
         logger.info("Received request at /pricefinder")
 
         data = request.json or {}
-        postcode = data.get("postcode", "").strip()
+        postcode   = data.get("postcode", "").strip()
         verordnung = data.get("verordnung", "").strip()
-        klasse = data.get("klasse", "").strip()
+        klasse     = data.get("klasse", "").strip()
 
-        # If your code uses sessionID/threadId logic:
+        # If your code uses sessionID/threadId logic (like your other endpoints):
         thread_id_from_body = data.get("threadId", "")
         session_id = request.cookies.get("session_id")
 
-        # Use a dedicated pricefinder assistant ID
-        # e.g., 'ASSISTANT_ID_pricefinder' from your environment
+        # The environment variable for your new pricefinder assistant
+        # e.g. 'ASSISTANT_ID_pricefinder'
         assistant_id = os.getenv("ASSISTANT_ID_pricefinder")
         if not assistant_id:
             logger.error("ASSISTANT_ID_pricefinder is not set in environment variables.")
             return jsonify({"response": "Assistant configuration error."}), 500
 
-        # Step A: Manage session
+        # ========= Session / Thread Logic (like your existing routes) =========
         if not session_id and thread_id_from_body:
             matching_session_id = None
             for possible_session_id, session_info in session_data.items():
@@ -1031,20 +1033,20 @@ def pricefinder():
         thread_id = session_data[session_id]["thread"].id
         logger.info(f"Using thread ID: {thread_id}")
 
-        # Step B: Construct a user message
+        # ========= 1) Construct a user message for the assistant =========
         user_message = (
             f"Postcode: {postcode}, Verordnung: {verordnung}, Klasse: {klasse}. "
             f"Please return only the numeric price in euros (no extra text)."
         )
 
-        # Step C: Add user message to the thread
+        # Add user message to the thread
         client.beta.threads.messages.create(
             thread_id=thread_id,
             role="user",
             content=user_message
         )
 
-        # Step D: Call the assistant
+        # ========= 2) Call the assistant and get response =========
         run = client.beta.threads.runs.create_and_poll(
             thread_id=thread_id,
             assistant_id=assistant_id
@@ -1058,14 +1060,92 @@ def pricefinder():
         response_message = messages[0].content[0].text.value
         logger.info(f"Response from pricefinder assistant: {response_message}")
 
-        # Step E: Return the result
-        response = make_response(jsonify({"response": response_message, "thread_id": thread_id}))
+        # ========= 3) Parse numeric price from response_message =========
+        price_str = response_message.strip()
+        # Remove everything except digits, dot, comma
+        price_str = re.sub(r'[^0-9.,]', '', price_str)
+        # Convert comma to dot
+        price_str = price_str.replace(',', '.')
+
+        # Attempt to parse float
+        try:
+            numeric_price = float(price_str)
+            logger.info(f"Parsed numeric price => {numeric_price}")
+        except ValueError:
+            logger.error(f"Could not parse numeric price from => {price_str}")
+            numeric_price = None
+
+        # ========= 4) If numeric price found, store in Preisanfragen =========
+        if numeric_price is not None:
+            send_to_preisanfragen(postcode, verordnung, klasse, numeric_price)
+        else:
+            logger.info("Assistant did not return a numeric price => skipping Preisanfragen insert.")
+
+        # ========= 5) Return JSON to the PHP fallback =========
+        response = make_response(jsonify({
+            "response": response_message,
+            "thread_id": thread_id
+        }))
+        # Set a cookie for the session ID
         response.set_cookie("session_id", session_id, httponly=True, samesite="None", secure=True)
         return response
 
     except Exception as e:
         logger.error(f"Error in /pricefinder: {e}")
         return jsonify({"response": "Entschuldigung, ein Fehler ist aufgetreten."}), 500
+
+
+def send_to_preisanfragen(postcode, verordnung, klasse, price):
+    """
+    Inserts a new record into the 'Preisanfragen' module in Zoho CRM.
+    The user says:
+      - 'Name' field = postcode
+      - 'Verordnung' field = verordnung
+      - 'Klasse' field = klasse
+      - 'Preis' field = price
+    Adjust as needed for your actual field API names in Zoho.
+    """
+    try:
+        ensure_valid_access_token()  # Refresh token if needed
+
+        zoho_url = "https://www.zohoapis.eu/crm/v3/Preisanfragen"  # or /v2/ if you're using v2
+        headers = {
+            'Authorization': f'Zoho-oauthtoken {access_token}',
+            'Content-Type': 'application/json'
+        }
+
+        # Build the record with the required fields. 
+        # "Name" field in Preisanfragen = postcode
+        # "Verordnung", "Klasse", "Preis" presumably match the field API names exactly.
+        record_data = [
+            {
+                "Name": postcode,    # API name => 'Name' field
+                "Verordnung": verordnung, 
+                "Klasse": klasse,
+                "Preis": price
+            }
+        ]
+        payload = {"data": record_data}
+
+        logger.info(f"Creating Preisanfragen record => {payload}")
+        response = requests.post(zoho_url, json=payload, headers=headers)
+        logger.info(f"Preisanfragen insert code: {response.status_code}, text: {response.text}")
+
+        # If unauthorized => refresh token & retry
+        if response.status_code == 401:
+            logger.warning("401 Unauthorized => refreshing token & retrying Preisanfragen")
+            refresh_access_token()
+            headers['Authorization'] = f'Zoho-oauthtoken {access_token}'
+            response = requests.post(zoho_url, json=payload, headers=headers)
+            logger.info(f"Retry status: {response.status_code}, text: {response.text}")
+
+        if response.status_code in (200, 201):
+            logger.info("Successfully created Preisanfragen record.")
+        else:
+            logger.error(f"Failed to insert Preisanfragen => {response.text}")
+    except Exception as e:
+        logger.error(f"Error while inserting Preisanfragen => {e}")
+
 
 
 
