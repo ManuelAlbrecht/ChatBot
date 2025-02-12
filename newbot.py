@@ -1099,31 +1099,28 @@ def pricefinder():
 def send_to_preisanfragen(postcode, verordnung, klasse, price):
     """
     Inserts a new record into the 'Preisanfragen' module in Zoho CRM.
-    The user says:
-      - 'Name' field = postcode
-      - 'Verordnung' field = verordnung
-      - 'Klasse' field = klasse
-      - 'Preis' field = price
-    Adjust as needed for your actual field API names in Zoho.
+    'Preis' is a text field, so we'll store it in German style, e.g. "15,50€".
     """
     try:
-        ensure_valid_access_token()  # Refresh token if needed
+        ensure_valid_access_token()  # refresh Zoho token if needed
 
-        zoho_url = "https://www.zohoapis.eu/crm/v3/Preisanfragen"  # or /v2/ if you're using v2
+        zoho_url = "https://www.zohoapis.eu/crm/v3/Preisanfragen"
         headers = {
             'Authorization': f'Zoho-oauthtoken {access_token}',
             'Content-Type': 'application/json'
         }
 
-        # Build the record with the required fields. 
-        # "Name" field in Preisanfragen = postcode
-        # "Verordnung", "Klasse", "Preis" presumably match the field API names exactly.
+        # Convert numeric price (e.g. 15.5) -> "15,50€"
+        formatted_price = f"{price:.2f}"     # => "15.50"
+        formatted_price = formatted_price.replace('.', ',')  # => "15,50"
+        formatted_price += "€"               # => "15,50€"
+
         record_data = [
             {
-                "Name": postcode,    # API name => 'Name' field
-                "Verordnung": verordnung, 
+                "Name": postcode,       # e.g. "99998"
+                "Verordnung": verordnung,
                 "Klasse": klasse,
-                "Preis": str(price)
+                "Preis": formatted_price  # now "15,50€"
             }
         ]
         payload = {"data": record_data}
@@ -1132,7 +1129,7 @@ def send_to_preisanfragen(postcode, verordnung, klasse, price):
         response = requests.post(zoho_url, json=payload, headers=headers)
         logger.info(f"Preisanfragen insert code: {response.status_code}, text: {response.text}")
 
-        # If unauthorized => refresh token & retry
+        # Retry if 401
         if response.status_code == 401:
             logger.warning("401 Unauthorized => refreshing token & retrying Preisanfragen")
             refresh_access_token()
