@@ -220,7 +220,7 @@ def send_to_zoho(user_details):
                     "BenutzerIP": user_details.get("ip_address", ""),
                     "Benutzerregion": user_details.get("region", ""),
                     "Benutzerstadt": user_details.get("city", ""),
-                    "Gespr_chsverlauf": user_details.get("gespraechsverlauf", "")
+                    "Test_for_conversation": user_details.get("gespraechsverlauf", "")
                 }
             ]
         }
@@ -443,10 +443,10 @@ def ask1():
         logger.info(f"Received IP: {ip_address}, Region: {region}, City: {city}")
 
         # ----------------------------------------------------------------------
-        # STEP A: Always retrieve or create the OpenAI thread (and session) FIRST
+        # STEP A: Retrieve or create the OpenAI thread (and session) FIRST
         session_id = request.cookies.get("session_id")
 
-        # If no session_id, see if front-end gave us a threadId
+        # If no session_id, check if front-end gave us a threadId
         if not session_id and thread_id_from_body:
             matching_session_id = None
             for possible_session_id, session_info in session_data.items():
@@ -467,6 +467,7 @@ def ask1():
             }
             logger.info(f"New session created with ID: {session_id}")
         elif session_id not in session_data:
+            # If we have a session_id but it's not in session_data, create it
             session_data[session_id] = {
                 "thread": client.beta.threads.create(),
                 "user_details": {},
@@ -474,7 +475,7 @@ def ask1():
             }
             logger.info(f"Session data initialized for existing session ID: {session_id}")
 
-        # We now have a valid sessionId, so get the threadId from it
+        # Now we have a valid sessionId, get the threadId
         thread_id = session_data[session_id]["thread"].id
         logger.info(f"Using thread ID: {thread_id}")
 
@@ -504,9 +505,9 @@ def ask1():
         }
 
         # ----------------------------------------------------------------------
-        # STEP C: If user's question is special, we respond from the special list
+        # STEP C: Check for "special" question
         if user_message.lower().strip() in SPECIAL_RESPONSES:
-            # OPTIONAL: Store the user message in the OpenAI thread if you want context
+            # Optionally store the user message in the thread
             client.beta.threads.messages.create(
                 thread_id=thread_id,
                 role="user",
@@ -521,7 +522,7 @@ def ask1():
             response_message = random_response
             logger.info("Returning a special delayed (random) response.")
 
-            # OPTIONAL: Store the assistant's special response in the thread
+            # Optionally store the assistant's special response in the thread
             client.beta.threads.messages.create(
                 thread_id=thread_id,
                 role="assistant",
@@ -531,39 +532,39 @@ def ask1():
             # Log to DB
             log_chat("special-no-openai", user_message, response_message, ip_address, region, city)
 
-            # Return this special response AND the same thread_id
+            # Return special response + same thread_id
             response = make_response(jsonify({"response": response_message, "thread_id": thread_id}))
             response.set_cookie("session_id", session_id, httponly=True, samesite="None", secure=True)
             return response
 
         # ----------------------------------------------------------------------
-        # STEP D: Otherwise, go through normal OpenAI flow
+        # STEP D: Normal OpenAI flow
 
-        # Possibly add region info to the user message
+        # Include region note if available
         user_message_for_gpt = user_message
         if region and region.lower() != "unavailable":
             user_message_for_gpt = f"(HINWEIS: Der Benutzer befindet sich in {region}.)\n\n{user_message}"
 
-        # 1) Insert user's message (with region hint) into thread
+        # 1) Insert user's message
         client.beta.threads.messages.create(
             thread_id=thread_id,
             role="user",
             content=user_message_for_gpt
         )
 
-        # 2) Call OpenAI
+        # 2) Run the assistant
         run = client.beta.threads.runs.create_and_poll(thread_id=thread_id, assistant_id=assistant_id_berater)
         messages = list(client.beta.threads.messages.list(thread_id=thread_id, run_id=run.id))
 
         response_message = messages[0].content[0].text.value
         logger.info(f"Response from OpenAI: {response_message}")
 
-        # 3) Check if it's a summary or triggers Zoho, etc.
-        if ("zusammenfassung" in response_message.lower()
-            or "überblick" in response_message.lower()
-            or "summary" in response_message.lower()
-            or "zusammenfassen" in response_message.lower()
-            or "zusammen" in response_message.lower()):
+        # 3) Check if it's a summary => store
+        if ("zusammenfassung" in response_message.lower() or
+            "überblick" in response_message.lower() or
+            "summary" in response_message.lower() or
+            "zusammenfassen" in response_message.lower() or
+            "zusammen" in response_message.lower()):
             session_data[session_id]['summary'] = response_message
             logger.info(f"Summary stored for session {session_id}.")
 
@@ -575,6 +576,7 @@ def ask1():
             "super! ich werde die anfrage an meine kollegen weiterleiten."
         ]
 
+        # If the assistant says one of these confirmations, we parse + send to Zoho
         if any(phrase in response_message.lower() for phrase in confirmation_response_phrases):
             logger.info("Assistant provided the confirmation message.")
             confirmed_summary = session_data[session_id].get('summary')
@@ -584,26 +586,24 @@ def ask1():
                     # Fetch the entire conversation from the thread
                     all_messages = client.beta.threads.messages.list(thread_id=thread_id)
 
-                    # Build conversation top-to-bottom
+                    # We'll store each line as "User: text" or "Bot: text"
                     conversation_history = []
                     for msg in all_messages:
-                        # Make sender bold
                         if msg.role == "user":
-                            sender = "<strong>User</strong>"
+                            sender = "User"
                         else:
-                            sender = "<strong>Bot</strong>"
+                            sender = "Bot"
 
-                        # Convert \n to <br> for Rich Text
-                        text_html = msg.content[0].text.value.replace("\n", "<br>")
-                        conversation_history.append(f"{sender}: {text_html}")
+                        text = msg.content[0].text.value
+                        conversation_history.append(f"{sender}: {text}")
 
-                    # Join each message with <br>
-                    full_conversation_html = "<br>".join(conversation_history)
+                    # Join them with newlines for a normal multi-line text
+                    full_conversation = "\n".join(conversation_history)
 
-                    # Wrap it in <p> so Zoho displays HTML nicely
-                    user_details["gespraechsverlauf"] = f"<p>{full_conversation_html}</p>"
+                    # Store in user_details
+                    user_details["gespraechsverlauf"] = full_conversation
 
-                    # Add IP, region, and city
+                    # Add IP, region, city
                     user_details["ip_address"] = ip_address
                     user_details["region"] = region
                     user_details["city"] = city
@@ -620,7 +620,7 @@ def ask1():
         else:
             logger.info("Assistant did not provide the confirmation message.")
 
-        # 4) Log and return
+        # 4) Log + return
         log_chat(thread_id, user_message, response_message, ip_address, region, city)
 
         response = make_response(jsonify({"response": response_message, "thread_id": thread_id}))
@@ -630,6 +630,7 @@ def ask1():
     except Exception as e:
         logger.error(f"Error in /askberater: {e}")
         return jsonify({"response": "Entschuldigung, ein Fehler ist aufgetreten."}), 500
+
 
 
 
