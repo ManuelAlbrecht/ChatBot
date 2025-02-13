@@ -979,11 +979,10 @@ def deponieverordnung():
 @app.route("/pricefinder", methods=["POST"])
 def pricefinder():
     """
-    Endpoint for your 'pricefinder' assistant.
-    Expects JSON with { "postcode": "...", "verordnung": "...", "klasse": "...", "threadId": "..."(optional) }.
-    1) Calls the assistant for a numeric fallback price,
-    2) Stores that fallback price in the 'Preisanfragen' Zoho module,
-    3) Returns { "response": "...", "thread_id": "..." }.
+    Replaces the old /pricefinder endpoint that used Zoho CRM.
+    1) Calls the assistant to get a numeric price.
+    2) Stores that price in 'preisanfragen' table (SQL).
+    3) Returns the price to the caller.
     """
     try:
         logger.info("Received request at /pricefinder")
@@ -993,18 +992,11 @@ def pricefinder():
         verordnung = data.get("verordnung", "").strip()
         klasse     = data.get("klasse", "").strip()
 
-        # If your code uses sessionID/threadId logic (like your other endpoints):
+        # Session logic remains if you want to keep thread IDs and conversation tracking
         thread_id_from_body = data.get("threadId", "")
         session_id = request.cookies.get("session_id")
 
-        # The environment variable for your new pricefinder assistant
-        # e.g. 'ASSISTANT_ID_pricefinder'
-        assistant_id = os.getenv("ASSISTANT_ID_pricefinder")
-        if not assistant_id:
-            logger.error("ASSISTANT_ID_pricefinder is not set in environment variables.")
-            return jsonify({"response": "Assistant configuration error."}), 500
-
-        # ========= Session / Thread Logic (like your existing routes) =========
+        # Provide a default or random session if none exists
         if not session_id and thread_id_from_body:
             matching_session_id = None
             for possible_session_id, session_info in session_data.items():
@@ -1023,7 +1015,6 @@ def pricefinder():
             }
             logger.info(f"New session created with ID: {session_id}")
         elif session_id not in session_data:
-            # If the cookie points to a missing session, re-init
             session_data[session_id] = {
                 "thread": client.beta.threads.create(),
                 "user_details": {},
@@ -1034,41 +1025,36 @@ def pricefinder():
         thread_id = session_data[session_id]["thread"].id
         logger.info(f"Using thread ID: {thread_id}")
 
-        # ========= 1) Construct a user message for the assistant =========
+        # Step 1) Create a user message for the assistant
         user_message = (
             f"Postcode: {postcode}, Verordnung: {verordnung}, Klasse: {klasse}. "
             f"Please return only the numeric price in euros (no extra text)."
         )
 
-        # Add user message to the thread
+        # Send the user message to OpenAI
         client.beta.threads.messages.create(
             thread_id=thread_id,
             role="user",
             content=user_message
         )
 
-        # ========= 2) Call the assistant and get response =========
+        # Step 2) Run the assistant
         run = client.beta.threads.runs.create_and_poll(
             thread_id=thread_id,
-            assistant_id=assistant_id
+            assistant_id=os.getenv("ASSISTANT_ID_pricefinder", "")
         )
         messages = list(client.beta.threads.messages.list(thread_id=thread_id, run_id=run.id))
 
         if not messages:
             logger.error("No messages returned from pricefinder assistant.")
-            return jsonify({"response": "Keine Antwort erhalten.", "thread_id": thread_id})
+            return jsonify({"response": "Keine Antwort erhalten.", "thread_id": thread_id}), 200
 
         response_message = messages[0].content[0].text.value
         logger.info(f"Response from pricefinder assistant: {response_message}")
 
-        # ========= 3) Parse numeric price from response_message =========
-        price_str = response_message.strip()
-        # Remove everything except digits, dot, comma
-        price_str = re.sub(r'[^0-9.,]', '', price_str)
-        # Convert comma to dot
+        # Step 3) Parse numeric price
+        price_str = re.sub(r'[^0-9.,]', '', response_message.strip())
         price_str = price_str.replace(',', '.')
-
-        # Attempt to parse float
         try:
             numeric_price = float(price_str)
             logger.info(f"Parsed numeric price => {numeric_price}")
@@ -1076,18 +1062,17 @@ def pricefinder():
             logger.error(f"Could not parse numeric price from => {price_str}")
             numeric_price = None
 
-        # ========= 4) If numeric price found, store in Preisanfragen =========
+        # Step 4) If numeric, store in SQL 'preisanfragen'
         if numeric_price is not None:
-            send_to_preisanfragen(postcode, verordnung, klasse, numeric_price)
+            store_in_preisanfragen(postcode, verordnung, klasse, numeric_price)
         else:
-            logger.info("Assistant did not return a numeric price => skipping Preisanfragen insert.")
+            logger.info("Assistant did not return a numeric price => skip SQL insert.")
 
-        # ========= 5) Return JSON to the PHP fallback =========
+        # Return JSON
         response = make_response(jsonify({
-            "response": response_message,
+            "response": response_message,  # show exact assistant text
             "thread_id": thread_id
         }))
-        # Set a cookie for the session ID
         response.set_cookie("session_id", session_id, httponly=True, samesite="None", secure=True)
         return response
 
@@ -1096,88 +1081,67 @@ def pricefinder():
         return jsonify({"response": "Entschuldigung, ein Fehler ist aufgetreten."}), 500
 
 
-def send_to_preisanfragen(postcode, verordnung, klasse, price):
+def store_in_preisanfragen(postcode, verordnung, klasse, price):
     """
-    Inserts a new record into the 'Preisanfragen' module in Zoho CRM.
-    'Preis' is a text field, so we'll store it in German style, e.g. "15,50€".
+    Store the assistant-fetched price in the 'preisanfragen' table in MySQL.
+    The table has columns: id, postcode, verordnung, klasse, preis, created_at
+    'id' and 'created_at' are auto-managed. We'll insert the rest.
     """
+    connection = get_db_connection()
+    if connection is None:
+        logger.error("Failed to store in preisanfragen: No DB connection.")
+        return
+
     try:
-        ensure_valid_access_token()  # refresh Zoho token if needed
-
-        zoho_url = "https://www.zohoapis.eu/crm/v3/Preisanfragen"
-        headers = {
-            'Authorization': f'Zoho-oauthtoken {access_token}',
-            'Content-Type': 'application/json'
-        }
-
-        # Convert numeric price (e.g. 15.5) -> "15,50€"
-        formatted_price = f"{price:.2f}"     # => "15.50"
-        formatted_price = formatted_price.replace('.', ',')  # => "15,50"
-        formatted_price += "€"               # => "15,50€"
-
-        record_data = [
-            {
-                "Name": postcode,       # e.g. "99998"
-                "Verordnung": verordnung,
-                "Klasse": klasse,
-                "Preis": formatted_price  # now "15,50€"
-            }
-        ]
-        payload = {"data": record_data}
-
-        logger.info(f"Creating Preisanfragen record => {payload}")
-        response = requests.post(zoho_url, json=payload, headers=headers)
-        logger.info(f"Preisanfragen insert code: {response.status_code}, text: {response.text}")
-
-        # Retry if 401
-        if response.status_code == 401:
-            logger.warning("401 Unauthorized => refreshing token & retrying Preisanfragen")
-            refresh_access_token()
-            headers['Authorization'] = f'Zoho-oauthtoken {access_token}'
-            response = requests.post(zoho_url, json=payload, headers=headers)
-            logger.info(f"Retry status: {response.status_code}, text: {response.text}")
-
-        if response.status_code in (200, 201):
-            logger.info("Successfully created Preisanfragen record.")
-        else:
-            logger.error(f"Failed to insert Preisanfragen => {response.text}")
+        with connection.cursor() as cursor:
+            sql = """
+                INSERT INTO preisanfragen (postcode, verordnung, klasse, preis)
+                VALUES (%s, %s, %s, %s)
+            """
+            cursor.execute(sql, (postcode, verordnung, klasse, price))
+            connection.commit()
+            logger.info("Inserted into preisanfragen with price => %s", price)
     except Exception as e:
-        logger.error(f"Error while inserting Preisanfragen => {e}")
+        logger.error(f"Error inserting into preisanfragen: {e}")
+    finally:
+        connection.close()
+---
 
+## 2) **New `/preisvorschlag` Endpoint** (Replace Entirely)
 
-
+```python
 @app.route("/preisvorschlag", methods=["POST"])
 def preisvorschlag():
     """
-    Receives a suggested price plus the fetched price, ZIP, verordnung, klasse, etc.
-    Then stores it in the 'Preisvorschlag' Zoho CRM module.
-
-    API names in Zoho:
-      - Name = postcode
-      - PLZ = postcode
-      - Result = fetchedPrice
-      - Suggestion = suggestedPrice
-      - Verordnung = verordnung
-      - Klasse = klasse
-
-    Returns JSON { "message": "..."} on success or error.
+    Receives the user's suggested price + the system's fetched price,
+    along with postcode, verordnung, klasse.
+    Stores into 'preisvorschlag' table in MySQL:
+      - id (auto)
+      - postcode
+      - verordnung
+      - klasse
+      - suggested_price
+      - preis (the system's fetched price)
+      - created_at (auto)
+    Returns JSON { "message": "Preisvorschlag gespeichert!" } on success.
     """
     try:
         logger.info("Received request at /preisvorschlag")
 
         data = request.json or {}
-        # Extract all relevant fields from the JSON body
-        fetched_price = data.get("fetchedPrice", "").strip()    # system/fallback price
-        suggested_price = data.get("suggestedPrice", "").strip()# user suggestion
-        postcode = data.get("postcode", "").strip()
-        verordnung = data.get("verordnung", "").strip()
-        klasse = data.get("klasse", "").strip()
+        fetched_price   = data.get("fetchedPrice", "").strip()
+        suggested_price = data.get("suggestedPrice", "").strip()
+        postcode        = data.get("postcode", "").strip()
+        verordnung      = data.get("verordnung", "").strip()
+        klasse          = data.get("klasse", "").strip()
 
-        # Insert into Zoho's Preisvorschlag module
-        store_preisvorschlag_in_zoho(
-            postcode, verordnung, klasse,
-            fetched_price, suggested_price
-        )
+        # Convert 'fetched_price' and 'suggested_price' to decimal with '.' if needed
+        # Remove euro symbols or commas
+        fetched_float   = parse_price_to_float(fetched_price)
+        suggested_float = parse_price_to_float(suggested_price)
+
+        # Store in MySQL
+        store_in_preisvorschlag(postcode, verordnung, klasse, fetched_float, suggested_float)
 
         return jsonify({"message": "Preisvorschlag gespeichert!"})
 
@@ -1186,66 +1150,43 @@ def preisvorschlag():
         return jsonify({"message": "Ein Fehler ist aufgetreten."}), 500
 
 
-def store_preisvorschlag_in_zoho(postcode, verordnung, klasse, fetched_price, suggested_price):
+def parse_price_to_float(price_str):
     """
-    Inserts a record into the 'Preisvorschlag' module in Zoho CRM (v3 or v2).
-    Mapped fields:
-      - Name = postcode
-      - PLZ = postcode
-      - Result = fetchedPrice
-      - Suggestion = suggestedPrice
-      - Verordnung = verordnung
-      - Klasse = klasse
+    Utility: Convert a user price like '15,50', '15.50€' into float (e.g. 15.5).
+    If it fails, returns 0.0 or any default.
     """
+    tmp = re.sub(r'[^0-9.,]', '', price_str)
+    tmp = tmp.replace(',', '.')
     try:
-        ensure_valid_access_token()  # refresh token if needed
+        return float(tmp)
+    except:
+        return 0.0
 
-        zoho_url = "https://www.zohoapis.eu/crm/v3/Preisvorschlag"  
-        # If your module is literally named 'Preisvorschlag' in the CRM,
-        #   the URL is /Preisvorschlag. If it's /Preisvorschlaege or something,
-        #   adjust accordingly.
 
-        headers = {
-            'Authorization': f'Zoho-oauthtoken {access_token}',
-            'Content-Type': 'application/json'
-        }
+def store_in_preisvorschlag(postcode, verordnung, klasse, fetched_price, suggested_price):
+    """
+    Insert the user-suggested price into the 'preisvorschlag' table.
+    Table columns: id, postcode, verordnung, klasse, suggested_price, preis, created_at
+    'id' and 'created_at' are auto, so we insert the rest.
+    """
+    connection = get_db_connection()
+    if connection is None:
+        logger.error("No DB connection => can't store preisvorschlag.")
+        return
 
-        # Build record data using the API names EXACTLY as they appear in Zoho
-        record_data = [
-            {
-                "Name": postcode,            # API name: Name
-                "PLZ": postcode,             # API name: PLZ
-                "Result": fetched_price,     # API name: Result
-                "Suggestion": suggested_price, 
-                "Verordnung": verordnung,
-                "Klasse": klasse
-            }
-        ]
-
-        payload = {"data": record_data}
-
-        logger.info(f"Storing Preisvorschlag => {payload}")
-        response = requests.post(zoho_url, json=payload, headers=headers)
-        logger.info(f"Preisvorschlag insert code: {response.status_code}, text: {response.text}")
-
-        if response.status_code == 401:
-            logger.warning("401 unauthorized => refresh token & retry.")
-            refresh_access_token()
-            headers['Authorization'] = f'Zoho-oauthtoken {access_token}'
-            response = requests.post(zoho_url, json=payload, headers=headers)
-            logger.info(f"Retry code => {response.status_code}, text => {response.text}")
-
-        if response.status_code in (200, 201):
-            logger.info("Successfully inserted record into 'Preisvorschlag' module.")
-        else:
-            logger.error(f"Failed to insert => {response.text}")
-
+    try:
+        with connection.cursor() as cursor:
+            sql = """
+                INSERT INTO preisvorschlag (postcode, verordnung, klasse, suggested_price, preis)
+                VALUES (%s, %s, %s, %s, %s)
+            """
+            cursor.execute(sql, (postcode, verordnung, klasse, suggested_price, fetched_price))
+            connection.commit()
+            logger.info("Inserted into preisvorschlag => suggested=%s, fetched=%s", suggested_price, fetched_price)
     except Exception as e:
-        logger.error(f"Error while storing Preisvorschlag in Zoho => {e}")
-
-
-
-
+        logger.error(f"Error inserting into preisvorschlag: {e}")
+    finally:
+        connection.close()
 
 
 
