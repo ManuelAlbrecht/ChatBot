@@ -559,11 +559,11 @@ def ask1():
         logger.info(f"Response from OpenAI: {response_message}")
 
         # 3) Check if it's a summary or triggers Zoho, etc.
-        if ("zusammenfassung" in response_message.lower() or
-            "überblick" in response_message.lower() or
-            "summary" in response_message.lower() or
-            "zusammenfassen" in response_message.lower() or
-            "zusammen" in response_message.lower()):
+        if ("zusammenfassung" in response_message.lower()
+            or "überblick" in response_message.lower()
+            or "summary" in response_message.lower()
+            or "zusammenfassen" in response_message.lower()
+            or "zusammen" in response_message.lower()):
             session_data[session_id]['summary'] = response_message
             logger.info(f"Summary stored for session {session_id}.")
 
@@ -583,24 +583,33 @@ def ask1():
                 if user_details:
                     # Fetch the entire conversation from the thread
                     all_messages = client.beta.threads.messages.list(thread_id=thread_id)
+
+                    # Build conversation top-to-bottom
                     conversation_history = []
                     for msg in all_messages:
-                        sender = "User" if msg.role == "user" else "Bot"
-                        text = msg.content[0].text.value
-                        conversation_history.append(f"{sender}: {text}")
+                        # Make sender bold
+                        if msg.role == "user":
+                            sender = "<strong>User</strong>"
+                        else:
+                            sender = "<strong>Bot</strong>"
 
-                    full_conversation = "\n".join(conversation_history)
+                        # Convert \n to <br> for Rich Text
+                        text_html = msg.content[0].text.value.replace("\n", "<br>")
+                        conversation_history.append(f"{sender}: {text_html}")
 
-                    # Store the conversation in user_details
-                    user_details["gespraechsverlauf"] = full_conversation
+                    # Join each message with <br>
+                    full_conversation_html = "<br>".join(conversation_history)
 
-                    # Add IP, region, and city to user details
+                    # Wrap it in <p> so Zoho displays HTML nicely
+                    user_details["gespraechsverlauf"] = f"<p>{full_conversation_html}</p>"
+
+                    # Add IP, region, and city
                     user_details["ip_address"] = ip_address
                     user_details["region"] = region
                     user_details["city"] = city
 
                     logger.info(f"Parsed User Details: {user_details}")
-                    send_to_zoho(user_details)  # <-- Make sure you add "Gesprächsverlauf" in send_to_zoho
+                    send_to_zoho(user_details)
                     response_message += "\n\nIhre Daten wurden erfolgreich übermittelt."
                 else:
                     logger.error("Failed to parse user details from the summary.")
@@ -621,6 +630,7 @@ def ask1():
     except Exception as e:
         logger.error(f"Error in /askberater: {e}")
         return jsonify({"response": "Entschuldigung, ein Fehler ist aufgetreten."}), 500
+
 
 
 
