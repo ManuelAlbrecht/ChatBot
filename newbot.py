@@ -1105,11 +1105,9 @@ def store_in_preisanfragen(postcode, verordnung, klasse, price):
         logger.error(f"Error inserting into preisanfragen: {e}")
     finally:
         connection.close()
----
 
 ## 2) **New `/preisvorschlag` Endpoint** (Replace Entirely)
 
-```python
 @app.route("/preisvorschlag", methods=["POST"])
 def preisvorschlag():
     """
