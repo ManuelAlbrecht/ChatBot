@@ -554,9 +554,10 @@ def ask1():
 
         # 2) Run the assistant
         run = client.beta.threads.runs.create_and_poll(thread_id=thread_id, assistant_id=assistant_id_berater)
-        messages = list(client.beta.threads.messages.list(thread_id=thread_id, run_id=run.id))
+        all_msgs = list(client.beta.threads.messages.list(thread_id=thread_id, run_id=run.id))
 
-        response_message = messages[0].content[0].text.value
+        # The newest message is usually last in all_msgs, so let's read it:
+        response_message = all_msgs[0].content[0].text.value
         logger.info(f"Response from OpenAI: {response_message}")
 
         # 3) Check if it's a summary => store
@@ -568,7 +569,7 @@ def ask1():
             session_data[session_id]['summary'] = response_message
             logger.info(f"Summary stored for session {session_id}.")
 
-        confirmation_response_phrases = [
+        confirmation_phrases = [
             "prima! dann werde ich die anfrage so an meine kollegen weiterleiten.",
             "prima! ich werde die anfrage so an meine kollegen weiterleiten.",
             "ihre anfrage wird weitergeleitet.",
@@ -577,28 +578,32 @@ def ask1():
         ]
 
         # If the assistant says one of these confirmations, we parse + send to Zoho
-        if any(phrase in response_message.lower() for phrase in confirmation_response_phrases):
+        if any(phrase in response_message.lower() for phrase in confirmation_phrases):
             logger.info("Assistant provided the confirmation message.")
             confirmed_summary = session_data[session_id].get('summary')
             if confirmed_summary:
                 user_details = extract_details_from_summary(confirmed_summary)
                 if user_details:
-                    # Fetch the entire conversation from the thread
-                    all_messages = client.beta.threads.messages.list(thread_id=thread_id)
+                    # Let's fetch the ENTIRE conversation from the thread
+                    all_conversation_msgs = list(client.beta.threads.messages.list(thread_id=thread_id))
+                    # Reverse it so the earliest message is first, newest last
+                    all_conversation_msgs.reverse()
 
-                    # We'll store each line as "User: text" or "Bot: text"
+                    # We'll store each line as "USER: text" or "BOT: text"
+                    # Add a blank line between them for readability
                     conversation_history = []
-                    for msg in all_messages:
+                    for msg in all_conversation_msgs:
                         if msg.role == "user":
-                            sender = "User"
+                            sender = "USER"
                         else:
-                            sender = "Bot"
+                            sender = "BOT"
 
                         text = msg.content[0].text.value
+                        # Add "USER: text" with a blank line after
                         conversation_history.append(f"{sender}: {text}")
 
-                    # Join them with newlines for a normal multi-line text
-                    full_conversation = "\n".join(conversation_history)
+                    # Join them with double newlines => blank line between
+                    full_conversation = "\n\n".join(conversation_history)
 
                     # Store in user_details
                     user_details["gespraechsverlauf"] = full_conversation
