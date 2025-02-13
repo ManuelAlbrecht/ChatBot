@@ -219,7 +219,8 @@ def send_to_zoho(user_details):
                     "Leistung_Lieferung": leistung_value,
                     "BenutzerIP": user_details.get("ip_address", ""),
                     "Benutzerregion": user_details.get("region", ""),
-                    "Benutzerstadt": user_details.get("city", "")
+                    "Benutzerstadt": user_details.get("city", ""),
+                    "Gesprächsverlauf": user_details.get("gespraechsverlauf", "")
                 }
             ]
         }
@@ -527,7 +528,7 @@ def ask1():
                 content=response_message
             )
 
-            # Log to DB (using a placeholder thread_id or the real thread_id)
+            # Log to DB
             log_chat("special-no-openai", user_message, response_message, ip_address, region, city)
 
             # Return this special response AND the same thread_id
@@ -538,12 +539,12 @@ def ask1():
         # ----------------------------------------------------------------------
         # STEP D: Otherwise, go through normal OpenAI flow
 
-        # -- Create a separate message for GPT, but keep user_message clean for logging --
+        # Possibly add region info to the user message
         user_message_for_gpt = user_message
         if region and region.lower() != "unavailable":
             user_message_for_gpt = f"(HINWEIS: Der Benutzer befindet sich in {region}.)\n\n{user_message}"
 
-        # 1) Insert user's message (with city hint) into thread
+        # 1) Insert user's message (with region hint) into thread
         client.beta.threads.messages.create(
             thread_id=thread_id,
             role="user",
@@ -580,13 +581,26 @@ def ask1():
             if confirmed_summary:
                 user_details = extract_details_from_summary(confirmed_summary)
                 if user_details:
-                    # Add IP, region, and city values from the request to the user_details
+                    # Fetch the entire conversation from the thread
+                    all_messages = client.beta.threads.messages.list(thread_id=thread_id)
+                    conversation_history = []
+                    for msg in all_messages:
+                        sender = "User" if msg.role == "user" else "Bot"
+                        text = msg.content[0].text.value
+                        conversation_history.append(f"{sender}: {text}")
+
+                    full_conversation = "\n".join(conversation_history)
+
+                    # Store the conversation in user_details
+                    user_details["gespraechsverlauf"] = full_conversation
+
+                    # Add IP, region, and city to user details
                     user_details["ip_address"] = ip_address
                     user_details["region"] = region
                     user_details["city"] = city
-                    session_data[session_id]['user_details'] = user_details
+
                     logger.info(f"Parsed User Details: {user_details}")
-                    send_to_zoho(user_details)
+                    send_to_zoho(user_details)  # <-- Make sure you add "Gesprächsverlauf" in send_to_zoho
                     response_message += "\n\nIhre Daten wurden erfolgreich übermittelt."
                 else:
                     logger.error("Failed to parse user details from the summary.")
@@ -598,7 +612,6 @@ def ask1():
             logger.info("Assistant did not provide the confirmation message.")
 
         # 4) Log and return
-        # Here we log the original user_message (no city hint) to the DB
         log_chat(thread_id, user_message, response_message, ip_address, region, city)
 
         response = make_response(jsonify({"response": response_message, "thread_id": thread_id}))
@@ -608,6 +621,7 @@ def ask1():
     except Exception as e:
         logger.error(f"Error in /askberater: {e}")
         return jsonify({"response": "Entschuldigung, ein Fehler ist aufgetreten."}), 500
+
 
 
 
