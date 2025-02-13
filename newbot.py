@@ -220,7 +220,7 @@ def send_to_zoho(user_details):
                     "BenutzerIP": user_details.get("ip_address", ""),
                     "Benutzerregion": user_details.get("region", ""),
                     "Benutzerstadt": user_details.get("city", ""),
-                    "Gesprächsverlauf": user_details.get("gespraechsverlauf", "")
+                    "Gespr_chsverlauf": user_details.get("gespraechsverlauf", "")
                 }
             ]
         }
