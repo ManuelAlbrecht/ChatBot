@@ -1150,6 +1150,7 @@ def preisvorschlag():
       - klasse
       - suggested_price
       - preis (the system's fetched price)
+      - source (always 'pricefinder' in this scenario)
       - created_at (auto)
     Returns JSON { "message": "Preisvorschlag gespeichert!" } on success.
     """
@@ -1164,11 +1165,10 @@ def preisvorschlag():
         klasse          = data.get("klasse", "").strip()
 
         # Convert 'fetched_price' and 'suggested_price' to decimal with '.' if needed
-        # Remove euro symbols or commas
         fetched_float   = parse_price_to_float(fetched_price)
         suggested_float = parse_price_to_float(suggested_price)
 
-        # Store in MySQL
+        # Store in MySQL => includes source='pricefinder'
         store_in_preisvorschlag(postcode, verordnung, klasse, fetched_float, suggested_float)
 
         return jsonify({"message": "Preisvorschlag gespeichert!"})
@@ -1193,9 +1193,11 @@ def parse_price_to_float(price_str):
 
 def store_in_preisvorschlag(postcode, verordnung, klasse, fetched_price, suggested_price):
     """
-    Insert the user-suggested price into the 'preisvorschlag' table.
-    Table columns: id, postcode, verordnung, klasse, suggested_price, preis, created_at
-    'id' and 'created_at' are auto, so we insert the rest.
+    Insert the user-suggested price and fetched price into 'preisvorschlag' table,
+    setting source='pricefinder'.
+    Table columns: 
+      id, postcode, verordnung, klasse, suggested_price, preis, source, created_at
+    'id' and 'created_at' are auto => we insert the rest.
     """
     connection = get_db_connection()
     if connection is None:
@@ -1205,12 +1207,13 @@ def store_in_preisvorschlag(postcode, verordnung, klasse, fetched_price, suggest
     try:
         with connection.cursor() as cursor:
             sql = """
-                INSERT INTO preisvorschlag (postcode, verordnung, klasse, suggested_price, preis)
-                VALUES (%s, %s, %s, %s, %s)
+                INSERT INTO preisvorschlag 
+                    (postcode, verordnung, klasse, suggested_price, preis, source)
+                VALUES (%s, %s, %s, %s, %s, %s)
             """
-            cursor.execute(sql, (postcode, verordnung, klasse, suggested_price, fetched_price))
+            cursor.execute(sql, (postcode, verordnung, klasse, suggested_price, fetched_price, 'pricefinder'))
             connection.commit()
-            logger.info("Inserted into preisvorschlag => suggested=%s, fetched=%s", suggested_price, fetched_price)
+            logger.info("Inserted into preisvorschlag => suggested=%s, fetched=%s, source=pricefinder", suggested_price, fetched_price)
     except Exception as e:
         logger.error(f"Error inserting into preisvorschlag: {e}")
     finally:
