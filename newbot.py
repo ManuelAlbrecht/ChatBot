@@ -1132,6 +1132,7 @@ def store_in_preisanfragen(postcode, verordnung, klasse, price, ip_address, regi
             cursor.execute(sql, (postcode, verordnung, klasse, price, ip_address, region, city))
             connection.commit()
             logger.info("Inserted into preisanfragen with price => %s", price)
+            logger.info("Inserted into preisanfragen with ip => %s", ip_address)
     except Exception as e:
         logger.error(f"Error inserting into preisanfragen: {e}")
     finally:
