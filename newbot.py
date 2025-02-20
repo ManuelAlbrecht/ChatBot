@@ -1021,12 +1021,16 @@ def pricefinder():
         postcode   = data.get("postcode", "").strip()
         verordnung = data.get("verordnung", "").strip()
         klasse     = data.get("klasse", "").strip()
+        
+        # NEW: Extract IP, region, city from the request JSON
+        ip_address = data.get("ip_address", "").strip()
+        region = data.get("region", "").strip()
+        city = data.get("city", "").strip()
 
-        # Session logic remains if you want to keep thread IDs and conversation tracking
+        # Session logic remains unchanged
         thread_id_from_body = data.get("threadId", "")
         session_id = request.cookies.get("session_id")
 
-        # Provide a default or random session if none exists
         if not session_id and thread_id_from_body:
             matching_session_id = None
             for possible_session_id, session_info in session_data.items():
@@ -1061,7 +1065,6 @@ def pricefinder():
             f"Please return only the numeric price in euros (no extra text)."
         )
 
-        # Send the user message to OpenAI
         client.beta.threads.messages.create(
             thread_id=thread_id,
             role="user",
@@ -1092,15 +1095,14 @@ def pricefinder():
             logger.error(f"Could not parse numeric price from => {price_str}")
             numeric_price = None
 
-        # Step 4) If numeric, store in SQL 'preisanfragen'
+        # Step 4) If numeric, store in SQL 'preisanfragen' with IP info
         if numeric_price is not None:
-            store_in_preisanfragen(postcode, verordnung, klasse, numeric_price)
+            store_in_preisanfragen(postcode, verordnung, klasse, numeric_price, ip_address, region, city)
         else:
             logger.info("Assistant did not return a numeric price => skip SQL insert.")
 
-        # Return JSON
         response = make_response(jsonify({
-            "response": response_message,  # show exact assistant text
+            "response": response_message,
             "thread_id": thread_id
         }))
         response.set_cookie("session_id", session_id, httponly=True, samesite="None", secure=True)
@@ -1111,24 +1113,23 @@ def pricefinder():
         return jsonify({"response": "Entschuldigung, ein Fehler ist aufgetreten."}), 500
 
 
-def store_in_preisanfragen(postcode, verordnung, klasse, price):
+def store_in_preisanfragen(postcode, verordnung, klasse, price, ip_address, region, city):
     """
     Store the assistant-fetched price in the 'preisanfragen' table in MySQL.
-    The table has columns: id, postcode, verordnung, klasse, preis, created_at
+    The table has columns: id, postcode, verordnung, klasse, preis, ip_address, region, city, created_at
     'id' and 'created_at' are auto-managed. We'll insert the rest.
     """
     connection = get_db_connection()
     if connection is None:
         logger.error("Failed to store in preisanfragen: No DB connection.")
         return
-
     try:
         with connection.cursor() as cursor:
             sql = """
-                INSERT INTO preisanfragen (postcode, verordnung, klasse, preis)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO preisanfragen (postcode, verordnung, klasse, preis, ip_address, region, city)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
             """
-            cursor.execute(sql, (postcode, verordnung, klasse, price))
+            cursor.execute(sql, (postcode, verordnung, klasse, price, ip_address, region, city))
             connection.commit()
             logger.info("Inserted into preisanfragen with price => %s", price)
     except Exception as e:
@@ -1136,7 +1137,6 @@ def store_in_preisanfragen(postcode, verordnung, klasse, price):
     finally:
         connection.close()
 
-## 2) **New `/preisvorschlag` Endpoint** (Replace Entirely)
 
 @app.route("/preisvorschlag", methods=["POST"])
 def preisvorschlag():
@@ -1151,6 +1151,7 @@ def preisvorschlag():
       - suggested_price
       - preis (the system's fetched price)
       - source (always 'pricefinder' in this scenario)
+      - ip_address, region, city (NEW)
       - created_at (auto)
     Returns JSON { "message": "Preisvorschlag gespeichert!" } on success.
     """
@@ -1164,12 +1165,15 @@ def preisvorschlag():
         verordnung      = data.get("verordnung", "").strip()
         klasse          = data.get("klasse", "").strip()
 
-        # Convert 'fetched_price' and 'suggested_price' to decimal with '.' if needed
+        # NEW: Extract IP, region, city from request JSON
+        ip_address = data.get("ip_address", "").strip()
+        region = data.get("region", "").strip()
+        city = data.get("city", "").strip()
+
         fetched_float   = parse_price_to_float(fetched_price)
         suggested_float = parse_price_to_float(suggested_price)
 
-        # Store in MySQL => includes source='pricefinder'
-        store_in_preisvorschlag(postcode, verordnung, klasse, fetched_float, suggested_float)
+        store_in_preisvorschlag(postcode, verordnung, klasse, fetched_float, suggested_float, ip_address, region, city)
 
         return jsonify({"message": "Preisvorschlag gespeichert!"})
 
@@ -1191,12 +1195,12 @@ def parse_price_to_float(price_str):
         return 0.0
 
 
-def store_in_preisvorschlag(postcode, verordnung, klasse, fetched_price, suggested_price):
+def store_in_preisvorschlag(postcode, verordnung, klasse, fetched_price, suggested_price, ip_address, region, city):
     """
     Insert the user-suggested price and fetched price into 'preisvorschlag' table,
     setting source='pricefinder'.
     Table columns: 
-      id, postcode, verordnung, klasse, suggested_price, preis, source, created_at
+      id, postcode, verordnung, klasse, suggested_price, preis, source, ip_address, region, city, created_at
     'id' and 'created_at' are auto => we insert the rest.
     """
     connection = get_db_connection()
@@ -1208,10 +1212,10 @@ def store_in_preisvorschlag(postcode, verordnung, klasse, fetched_price, suggest
         with connection.cursor() as cursor:
             sql = """
                 INSERT INTO preisvorschlag 
-                    (postcode, verordnung, klasse, suggested_price, preis, source)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                    (postcode, verordnung, klasse, suggested_price, preis, source, ip_address, region, city)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """
-            cursor.execute(sql, (postcode, verordnung, klasse, suggested_price, fetched_price, 'pricefinder'))
+            cursor.execute(sql, (postcode, verordnung, klasse, suggested_price, fetched_price, 'pricefinder', ip_address, region, city))
             connection.commit()
             logger.info("Inserted into preisvorschlag => suggested=%s, fetched=%s, source=pricefinder", suggested_price, fetched_price)
     except Exception as e:
