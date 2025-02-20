@@ -1011,21 +1011,23 @@ def pricefinder():
     """
     Replaces the old /pricefinder endpoint that used Zoho CRM.
     1) Calls the assistant to get a numeric price.
-    2) Stores that price in 'preisanfragen' table (SQL).
+    2) Stores that price in 'preisanfragen' table (SQL) along with IP, region, and city.
     3) Returns the price to the caller.
     """
     try:
         logger.info("Received request at /pricefinder")
 
-        data = request.json or {}
+        # Use JSON payload if available; otherwise, fall back to query parameters.
+        data = request.json if request.json else request.args
+
         postcode   = data.get("postcode", "").strip()
         verordnung = data.get("verordnung", "").strip()
         klasse     = data.get("klasse", "").strip()
         
-        # NEW: Extract IP, region, city from the request JSON
+        # NEW: Extract IP, region, city from the incoming data (either JSON or query string)
         ip_address = data.get("ip_address", "").strip()
-        region = data.get("region", "").strip()
-        city = data.get("city", "").strip()
+        region     = data.get("region", "").strip()
+        city       = data.get("city", "").strip()
 
         # Session logic remains unchanged
         thread_id_from_body = data.get("threadId", "")
@@ -1111,6 +1113,7 @@ def pricefinder():
     except Exception as e:
         logger.error(f"Error in /pricefinder: {e}")
         return jsonify({"response": "Entschuldigung, ein Fehler ist aufgetreten."}), 500
+
 
 
 def store_in_preisanfragen(postcode, verordnung, klasse, price, ip_address, region, city):
