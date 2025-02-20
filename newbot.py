@@ -1006,45 +1006,34 @@ def deponieverordnung():
 
 
 
-@app.route("/pricefinder", methods=["GET", "POST"])
+@app.route("/pricefinder", methods=["POST"])
 def pricefinder():
     """
     Replaces the old /pricefinder endpoint that used Zoho CRM.
     1) Calls the assistant to get a numeric price.
-    2) Stores that price in 'preisanfragen' table (SQL) along with IP, region, and city.
+    2) Stores that price in the 'preisanfragen' table along with IP, region, and city.
     3) Returns the price to the caller.
     """
     try:
         logger.info("Received request at /pricefinder")
-        
-        # Use JSON payload if method is POST; otherwise, use query parameters
-        if request.method == "POST":
-            data = request.json or {}
-        else:
-            data = request.args
-
+        data = request.json or {}
         postcode   = data.get("postcode", "").strip()
         verordnung = data.get("verordnung", "").strip()
         klasse     = data.get("klasse", "").strip()
         
-        # Extract IP, region, city from the incoming data
+        # Extract IP, region, and city from the JSON payload
         ip_address = data.get("ip_address", "").strip()
         region     = data.get("region", "").strip()
         city       = data.get("city", "").strip()
 
-        # Session logic remains unchanged
+        # Session logic (same as before)
         thread_id_from_body = data.get("threadId", "")
         session_id = request.cookies.get("session_id")
-
         if not session_id and thread_id_from_body:
-            matching_session_id = None
             for possible_session_id, session_info in session_data.items():
                 if session_info["thread"].id == thread_id_from_body:
-                    matching_session_id = possible_session_id
+                    session_id = possible_session_id
                     break
-            if matching_session_id:
-                session_id = matching_session_id
-
         if not session_id:
             session_id = str(uuid.uuid4())
             session_data[session_id] = {
@@ -1060,29 +1049,26 @@ def pricefinder():
                 "summary": None
             }
             logger.info(f"Session data re-initialized for existing session ID: {session_id}")
-
         thread_id = session_data[session_id]["thread"].id
         logger.info(f"Using thread ID: {thread_id}")
 
-        # Step 1) Create a user message for the assistant
+        # Create a message for the assistant
         user_message = (
             f"Postcode: {postcode}, Verordnung: {verordnung}, Klasse: {klasse}. "
             f"Please return only the numeric price in euros (no extra text)."
         )
-
         client.beta.threads.messages.create(
             thread_id=thread_id,
             role="user",
             content=user_message
         )
 
-        # Step 2) Run the assistant
+        # Run the assistant
         run = client.beta.threads.runs.create_and_poll(
             thread_id=thread_id,
             assistant_id=os.getenv("ASSISTANT_ID_pricefinder", "")
         )
         messages = list(client.beta.threads.messages.list(thread_id=thread_id, run_id=run.id))
-
         if not messages:
             logger.error("No messages returned from pricefinder assistant.")
             return jsonify({"response": "Keine Antwort erhalten.", "thread_id": thread_id}), 200
@@ -1090,7 +1076,7 @@ def pricefinder():
         response_message = messages[0].content[0].text.value
         logger.info(f"Response from pricefinder assistant: {response_message}")
 
-        # Step 3) Parse numeric price
+        # Parse numeric price
         price_str = re.sub(r'[^0-9.,]', '', response_message.strip())
         price_str = price_str.replace(',', '.')
         try:
@@ -1100,7 +1086,7 @@ def pricefinder():
             logger.error(f"Could not parse numeric price from => {price_str}")
             numeric_price = None
 
-        # Step 4) If numeric, store in SQL 'preisanfragen' with IP info
+        # If numeric, store in SQL 'preisanfragen' with IP info
         if numeric_price is not None:
             store_in_preisanfragen(postcode, verordnung, klasse, numeric_price, ip_address, region, city)
         else:
@@ -1116,6 +1102,7 @@ def pricefinder():
     except Exception as e:
         logger.error(f"Error in /pricefinder: {e}")
         return jsonify({"response": "Entschuldigung, ein Fehler ist aufgetreten."}), 500
+
 
 
 
