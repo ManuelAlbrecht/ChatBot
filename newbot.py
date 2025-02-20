@@ -1006,27 +1006,26 @@ def deponieverordnung():
 
 
 
-@app.route("/pricefinder", methods=["GET"])
+@app.route("/pricefinder", methods=["POST"])
 def pricefinder():
     """
     Replaces the old /pricefinder endpoint that used Zoho CRM.
     1) Calls the assistant to get a numeric price.
-    2) Stores that price in 'preisanfragen' table (SQL) along with IP, region, and city.
+    2) Stores that price in 'preisanfragen' table (SQL).
     3) Returns the price to the caller.
     """
     try:
         logger.info("Received request at /pricefinder")
 
-        # Extract parameters from GET query (instead of request.json)
-        data = request.args
+        data = request.json or {}
         postcode   = data.get("postcode", "").strip()
         verordnung = data.get("verordnung", "").strip()
         klasse     = data.get("klasse", "").strip()
         
-        # NEW: Extract IP, region, city from query parameters
+        # NEW: Extract IP, region, city from the request JSON
         ip_address = data.get("ip_address", "").strip()
-        region     = data.get("region", "").strip()
-        city       = data.get("city", "").strip()
+        region = data.get("region", "").strip()
+        city = data.get("city", "").strip()
 
         # Session logic remains unchanged
         thread_id_from_body = data.get("threadId", "")
