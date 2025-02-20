@@ -1006,7 +1006,7 @@ def deponieverordnung():
 
 
 
-@app.route("/pricefinder", methods=["POST"])
+@app.route("/pricefinder", methods=["GET", "POST"])
 def pricefinder():
     """
     Replaces the old /pricefinder endpoint that used Zoho CRM.
@@ -1016,15 +1016,18 @@ def pricefinder():
     """
     try:
         logger.info("Received request at /pricefinder")
-
-        # Use JSON payload if available; otherwise, fall back to query parameters.
-        data = request.json if request.json else request.args
+        
+        # Use JSON payload if method is POST; otherwise, use query parameters
+        if request.method == "POST":
+            data = request.json or {}
+        else:
+            data = request.args
 
         postcode   = data.get("postcode", "").strip()
         verordnung = data.get("verordnung", "").strip()
         klasse     = data.get("klasse", "").strip()
         
-        # NEW: Extract IP, region, city from the incoming data (either JSON or query string)
+        # Extract IP, region, city from the incoming data
         ip_address = data.get("ip_address", "").strip()
         region     = data.get("region", "").strip()
         city       = data.get("city", "").strip()
