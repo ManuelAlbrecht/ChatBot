@@ -1011,8 +1011,9 @@ def pricefinder():
     """
     Replaces the old /pricefinder endpoint that used Zoho CRM.
     1) Calls the assistant to get a numeric price.
-    2) Stores that price in 'preisanfragen' table (SQL).
-    3) Returns the price to the caller.
+    2) Fetches geo-data (IP, region, city) from backend.
+    3) Stores that price + geo-data in 'preisanfragen' table (SQL).
+    4) Returns the price to the caller.
     """
     try:
         logger.info("Received request at /pricefinder")
@@ -1092,9 +1093,15 @@ def pricefinder():
             logger.error(f"Could not parse numeric price from => {price_str}")
             numeric_price = None
 
-        # Step 4) If numeric, store in SQL 'preisanfragen'
+        # Fetch user's IP from the request, then get geo-data
+        user_ip = request.remote_addr or "Unavailable"
+        geo_data = fetch_geo_data(user_ip)
+        city   = geo_data.get("city", "Unavailable")
+        region = geo_data.get("region", "Unavailable")
+
+        # Step 4) If numeric, store in SQL 'preisanfragen' along with IP info
         if numeric_price is not None:
-            store_in_preisanfragen(postcode, verordnung, klasse, numeric_price)
+            store_in_preisanfragen(postcode, verordnung, klasse, numeric_price, user_ip, region, city)
         else:
             logger.info("Assistant did not return a numeric price => skip SQL insert.")
 
@@ -1111,11 +1118,12 @@ def pricefinder():
         return jsonify({"response": "Entschuldigung, ein Fehler ist aufgetreten."}), 500
 
 
-def store_in_preisanfragen(postcode, verordnung, klasse, price):
+def store_in_preisanfragen(postcode, verordnung, klasse, price, ip_address, region, city):
     """
     Store the assistant-fetched price in the 'preisanfragen' table in MySQL.
-    The table has columns: id, postcode, verordnung, klasse, preis, created_at
-    'id' and 'created_at' are auto-managed. We'll insert the rest.
+    Table columns: 
+      id, postcode, verordnung, klasse, preis, ip_address, region, city, created_at
+    'id' and 'created_at' auto-managed. We'll insert the rest.
     """
     connection = get_db_connection()
     if connection is None:
@@ -1125,18 +1133,18 @@ def store_in_preisanfragen(postcode, verordnung, klasse, price):
     try:
         with connection.cursor() as cursor:
             sql = """
-                INSERT INTO preisanfragen (postcode, verordnung, klasse, preis)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO preisanfragen (postcode, verordnung, klasse, preis, ip_address, region, city)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
             """
-            cursor.execute(sql, (postcode, verordnung, klasse, price))
+            cursor.execute(sql, (postcode, verordnung, klasse, price, ip_address, region, city))
             connection.commit()
-            logger.info("Inserted into preisanfragen with price => %s", price)
+            logger.info("Inserted into preisanfragen => preis=%s, ip=%s, region=%s, city=%s",
+                        price, ip_address, region, city)
     except Exception as e:
         logger.error(f"Error inserting into preisanfragen: {e}")
     finally:
         connection.close()
 
-## 2) **New `/preisvorschlag` Endpoint** (Replace Entirely)
 
 @app.route("/preisvorschlag", methods=["POST"])
 def preisvorschlag():
@@ -1151,6 +1159,9 @@ def preisvorschlag():
       - suggested_price
       - preis (the system's fetched price)
       - source (always 'pricefinder' in this scenario)
+      - ip_address
+      - region
+      - city
       - created_at (auto)
     Returns JSON { "message": "Preisvorschlag gespeichert!" } on success.
     """
@@ -1164,12 +1175,18 @@ def preisvorschlag():
         verordnung      = data.get("verordnung", "").strip()
         klasse          = data.get("klasse", "").strip()
 
-        # Convert 'fetched_price' and 'suggested_price' to decimal with '.' if needed
+        # Convert 'fetched_price' and 'suggested_price' to decimal if needed
         fetched_float   = parse_price_to_float(fetched_price)
         suggested_float = parse_price_to_float(suggested_price)
 
-        # Store in MySQL => includes source='pricefinder'
-        store_in_preisvorschlag(postcode, verordnung, klasse, fetched_float, suggested_float)
+        # Fetch user's IP from the request, then get geo-data
+        user_ip = request.remote_addr or "Unavailable"
+        geo_data = fetch_geo_data(user_ip)
+        city   = geo_data.get("city", "Unavailable")
+        region = geo_data.get("region", "Unavailable")
+
+        # Store in MySQL => includes source='pricefinder' + IP info
+        store_in_preisvorschlag(postcode, verordnung, klasse, fetched_float, suggested_float, user_ip, region, city)
 
         return jsonify({"message": "Preisvorschlag gespeichert!"})
 
@@ -1191,12 +1208,12 @@ def parse_price_to_float(price_str):
         return 0.0
 
 
-def store_in_preisvorschlag(postcode, verordnung, klasse, fetched_price, suggested_price):
+def store_in_preisvorschlag(postcode, verordnung, klasse, fetched_price, suggested_price, ip_address, region, city):
     """
     Insert the user-suggested price and fetched price into 'preisvorschlag' table,
-    setting source='pricefinder'.
+    setting source='pricefinder', plus geo-data.
     Table columns: 
-      id, postcode, verordnung, klasse, suggested_price, preis, source, created_at
+      id, postcode, verordnung, klasse, suggested_price, preis, source, ip_address, region, city, created_at
     'id' and 'created_at' are auto => we insert the rest.
     """
     connection = get_db_connection()
@@ -1208,16 +1225,48 @@ def store_in_preisvorschlag(postcode, verordnung, klasse, fetched_price, suggest
         with connection.cursor() as cursor:
             sql = """
                 INSERT INTO preisvorschlag 
-                    (postcode, verordnung, klasse, suggested_price, preis, source)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                    (postcode, verordnung, klasse, suggested_price, preis, source, ip_address, region, city)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """
-            cursor.execute(sql, (postcode, verordnung, klasse, suggested_price, fetched_price, 'pricefinder'))
+            cursor.execute(sql, (
+                postcode,
+                verordnung,
+                klasse,
+                suggested_price,
+                fetched_price,
+                'pricefinder',
+                ip_address,
+                region,
+                city
+            ))
             connection.commit()
-            logger.info("Inserted into preisvorschlag => suggested=%s, fetched=%s, source=pricefinder", suggested_price, fetched_price)
+            logger.info(
+                "Inserted into preisvorschlag => suggested=%s, fetched=%s, source=pricefinder, ip=%s, region=%s, city=%s",
+                suggested_price, fetched_price, ip_address, region, city
+            )
     except Exception as e:
         logger.error(f"Error inserting into preisvorschlag: {e}")
     finally:
         connection.close()
+
+
+def fetch_geo_data(ip_address):
+    """
+    Fetch user's geolocation (ip, city, region) from ipwhois.app.
+    If it fails, return 'Unavailable' placeholders.
+    """
+    try:
+        url = f"https://ipwhois.app/json/{ip_address}"
+        resp = requests.get(url, timeout=5)
+        data = resp.json()
+        return {
+            "ip": ip_address,
+            "city": data.get("city", "Unavailable"),
+            "region": data.get("region", "Unavailable"),
+        }
+    except Exception as e:
+        logger.error(f"Error fetching geo data for IP={ip_address}: {e}")
+        return {"ip": ip_address, "city": "Unavailable", "region": "Unavailable"}
 
 
 
