@@ -174,6 +174,7 @@ def send_to_zoho(user_details):
             'Content-Type': 'application/json',
         }
 
+        salutation = user_details.get('salutation','')
         first_name = user_details.get('first_name', '')
         last_name = user_details.get('last_name', '')
         phone = user_details.get('phone', '')
@@ -203,6 +204,7 @@ def send_to_zoho(user_details):
         data = {
             "data": [
                 {
+                    "Anrede": salutation,
                     "Deal_Name": deal_name,
                     "Vorname": first_name,
                     "Nachname": last_name,
