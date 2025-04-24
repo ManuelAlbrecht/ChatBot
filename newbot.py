@@ -1220,6 +1220,34 @@ def store_in_preisvorschlag(postcode, verordnung, klasse, fetched_price, suggest
         connection.close()
 
 
+@app.route("/log_crm_price", methods=["POST"])
+def log_crm_price():
+    """
+    Lightweight endpoint called by the PHP layer to log a CRM-served price.
+    Expects JSON body:
+      { "postcode": "12345",
+        "verordnung": "Ersatzbaustoffverordnung",
+        "klasse": "BM-0",
+        "preis": 15.50 }
+    """
+    try:
+        data = request.json or {}
+        postcode   = data.get("postcode", "").strip()
+        verordnung = data.get("verordnung", "").strip()
+        klasse     = data.get("klasse", "").strip()
+        preis      = float(data.get("preis", 0))
+
+        # Use the same helper, but tag as 'crm'
+        store_in_preisanfragen(postcode, verordnung, klasse, preis,
+                               source="crm")
+
+        return {"status": "ok"}, 200
+    except Exception as e:
+        logger.error("Error in /log_crm_price: %s", e)
+        return {"status": "error"}, 500
+
+
+
 
 
 if __name__ == "__main__":
