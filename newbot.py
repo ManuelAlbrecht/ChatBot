@@ -1022,13 +1022,13 @@ def pricefinder():
         postcode   = data.get("postcode", "").strip()
         verordnung = data.get("verordnung", "").strip()
         klasse     = data.get("klasse", "").strip()
-        
+
         # Extract IP, region, and city from the JSON payload
         ip_address = data.get("ip_address", "").strip()
         region     = data.get("region", "").strip()
         city       = data.get("city", "").strip()
 
-        # Session logic (same as before)
+        # --- session logic unchanged ----------------------------------
         thread_id_from_body = data.get("threadId", "")
         session_id = request.cookies.get("session_id")
         if not session_id and thread_id_from_body:
@@ -1090,7 +1090,10 @@ def pricefinder():
 
         # If numeric, store in SQL 'preisanfragen' with IP info
         if numeric_price is not None:
-            store_in_preisanfragen(postcode, verordnung, klasse, numeric_price, ip_address, region, city)
+            store_in_preisanfragen(
+                postcode, verordnung, klasse, numeric_price,
+                ip_address, region, city, source="openai"     # ← pass source
+            )
         else:
             logger.info("Assistant did not return a numeric price => skip SQL insert.")
 
@@ -1106,13 +1109,16 @@ def pricefinder():
         return jsonify({"response": "Entschuldigung, ein Fehler ist aufgetreten."}), 500
 
 
-
-
-def store_in_preisanfragen(postcode, verordnung, klasse, price, ip_address, region, city):
+# ----------------------------------------------------------------------
+#  store_in_preisanfragen  (now supports 'source')
+# ----------------------------------------------------------------------
+def store_in_preisanfragen(postcode, verordnung, klasse, price,
+                           ip_address="", region="", city="",
+                           source="openai"):
     """
-    Store the assistant-fetched price in the 'preisanfragen' table in MySQL.
-    The table has columns: id, postcode, verordnung, klasse, preis, ip_address, region, city, created_at
-    'id' and 'created_at' are auto-managed. We'll insert the rest.
+    Store a price in the 'preisanfragen' table.
+    Table columns: id, postcode, verordnung, klasse, preis,
+                   ip_address, region, city, source, created_at
     """
     connection = get_db_connection()
     if connection is None:
@@ -1121,13 +1127,17 @@ def store_in_preisanfragen(postcode, verordnung, klasse, price, ip_address, regi
     try:
         with connection.cursor() as cursor:
             sql = """
-                INSERT INTO preisanfragen (postcode, verordnung, klasse, preis, ip_address, region, city)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO preisanfragen
+                    (postcode, verordnung, klasse, preis,
+                     ip_address, region, city, source)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """
-            cursor.execute(sql, (postcode, verordnung, klasse, price, ip_address, region, city))
+            cursor.execute(sql, (
+                postcode, verordnung, klasse, price,
+                ip_address, region, city, source
+            ))
             connection.commit()
-            logger.info("Inserted into preisanfragen with price => %s", price)
-            logger.info("Inserted into preisanfragen with ip => %s", ip_address)
+            logger.info("Inserted into preisanfragen price=%s source=%s", price, source)
     except Exception as e:
         logger.error(f"Error inserting into preisanfragen: {e}")
     finally:
@@ -1223,29 +1233,21 @@ def store_in_preisvorschlag(postcode, verordnung, klasse, fetched_price, suggest
 @app.route("/log_crm_price", methods=["POST"])
 def log_crm_price():
     """
-    Lightweight endpoint called by the PHP layer to log a CRM-served price.
-    Expects JSON body:
-      { "postcode": "12345",
-        "verordnung": "Ersatzbaustoffverordnung",
-        "klasse": "BM-0",
-        "preis": 15.50 }
+    Called by PHP/JS to log a CRM-served price.
     """
     try:
-        data = request.json or {}
-        postcode   = data.get("postcode", "").strip()
-        verordnung = data.get("verordnung", "").strip()
-        klasse     = data.get("klasse", "").strip()
-        preis      = float(data.get("preis", 0))
+        data        = request.json or {}
+        postcode    = data.get("postcode", "").strip()
+        verordnung  = data.get("verordnung", "").strip()
+        klasse      = data.get("klasse", "").strip()
+        preis       = float(data.get("preis", 0))
 
-        # Use the same helper, but tag as 'crm'
         store_in_preisanfragen(postcode, verordnung, klasse, preis,
-                               source="crm")
-
+                               source="crm")      # helper now accepts it
         return {"status": "ok"}, 200
     except Exception as e:
         logger.error("Error in /log_crm_price: %s", e)
         return {"status": "error"}, 500
-
 
 
 
