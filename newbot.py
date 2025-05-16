@@ -544,8 +544,8 @@ def ask1():
 
         # Include region note if available
         user_message_for_gpt = user_message
-        if region and region.lower() != "unavailable":
-            user_message_for_gpt = f"(HINWEIS: Der Benutzer befindet sich in {region}.)\n\n{user_message}"
+        #if region and region.lower() != "unavailable":
+        #    user_message_for_gpt = f"(HINWEIS: Der Benutzer befindet sich in {region}.)\n\n{user_message}"
 
         # 1) Insert user's message
         client.beta.threads.messages.create(
